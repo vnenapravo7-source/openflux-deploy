@@ -84,7 +84,7 @@ func TestPasswordChangeInvalidatesSessions(t *testing.T) {
 	s := &server{users: store, sessions: map[string]session{"valid": {userID: owner.ID, expires: time.Now().Add(time.Hour)}}}
 	handler := s.auth(http.HandlerFunc(s.api))
 	change := func(current string) int {
-		body, _ := json.Marshal(map[string]string{"password": "new-long-password", "current_password": current})
+		body, _ := json.Marshal(map[string]string{"password": "a", "current_password": current})
 		req := httptest.NewRequest(http.MethodPut, "/api/users/owner/password", strings.NewReader(string(body)))
 		req.AddCookie(&http.Cookie{Name: "of_session", Value: "valid"})
 		req.Header.Set("X-OpenFlux-Action", "1")
@@ -102,7 +102,7 @@ func TestPasswordChangeInvalidatesSessions(t *testing.T) {
 	if len(s.sessions) != 0 {
 		t.Fatal("old session survived password change")
 	}
-	if _, ok := store.authenticate("alice", "new-long-password"); !ok {
+	if _, ok := store.authenticate("alice", "a"); !ok {
 		t.Fatal("new password not accepted")
 	}
 	if _, ok := store.authenticate("alice", "current-password"); ok {
@@ -120,7 +120,7 @@ func TestAdminCanResetOtherUsersPassword(t *testing.T) {
 	store := &UserStore{path: filepath.Join(t.TempDir(), "users.json"), users: []User{admin, target}}
 	s := &server{users: store, sessions: map[string]session{"admin-session": {userID: admin.ID, expires: time.Now().Add(time.Hour)}, "target-session": {userID: target.ID, expires: time.Now().Add(time.Hour)}}}
 	handler := s.auth(http.HandlerFunc(s.api))
-	req := httptest.NewRequest(http.MethodPut, "/api/users/target/password", strings.NewReader(`{"password":"replacement-password"}`))
+	req := httptest.NewRequest(http.MethodPut, "/api/users/target/password", strings.NewReader(`{"password":"b"}`))
 	req.AddCookie(&http.Cookie{Name: "of_session", Value: "admin-session"})
 	req.Header.Set("X-OpenFlux-Action", "1")
 	req.Header.Set("Content-Type", "application/json")
@@ -132,8 +132,38 @@ func TestAdminCanResetOtherUsersPassword(t *testing.T) {
 	if len(s.sessions) != 1 {
 		t.Fatalf("unexpected sessions after reset: %v", s.sessions)
 	}
-	if _, ok := store.authenticate("member", "replacement-password"); !ok {
+	if _, ok := store.authenticate("member", "b"); !ok {
 		t.Fatal("replacement password not accepted")
+	}
+}
+
+func TestPasswordHasNoMinimumLength(t *testing.T) {
+	if _, err := hashPassword(""); err == nil {
+		t.Fatal("empty password accepted")
+	}
+	for _, password := range []string{"x", strings.Repeat("Ж", 100)} {
+		hash, err := hashPassword(password)
+		if err != nil {
+			t.Fatalf("password length %d: %v", len(password), err)
+		}
+		if !passwordMatches(hash, password) || passwordMatches(hash, password+"x") {
+			t.Fatalf("password check failed for length %d", len(password))
+		}
+	}
+	store, err := loadUsers(filepath.Join(t.TempDir(), "users.json"), "admin", "x")
+	if err != nil {
+		t.Fatalf("one-character bootstrap password: %v", err)
+	}
+	if _, ok := store.authenticate("admin", "x"); !ok {
+		t.Fatal("one-character bootstrap password not accepted")
+	}
+	shortHash, err := hashPassword("x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	createStore := &UserStore{path: filepath.Join(t.TempDir(), "users.json"), users: []User{{ID: "admin", Username: "admin", Role: "admin", PasswordHash: shortHash}}}
+	if _, err := createStore.add("member", "x", "user"); err != nil {
+		t.Fatalf("one-character user password: %v", err)
 	}
 }
 

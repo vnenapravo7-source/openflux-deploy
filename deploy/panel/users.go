@@ -2,6 +2,8 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -35,6 +37,35 @@ type UserStore struct {
 }
 
 var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9_.-]{3,32}$`)
+
+const longPasswordPrefix = "sha256:"
+
+func passwordInput(password string) []byte {
+	digest := sha256.Sum256([]byte(password))
+	return []byte(base64.RawURLEncoding.EncodeToString(digest[:]))
+}
+
+func hashPassword(password string) (string, error) {
+	if password == "" {
+		return "", fmt.Errorf("password cannot be empty")
+	}
+	input, prefix := []byte(password), ""
+	if len(input) > 72 {
+		input, prefix = passwordInput(password), longPasswordPrefix
+	}
+	hash, err := bcrypt.GenerateFromPassword(input, bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return prefix + string(hash), nil
+}
+
+func passwordMatches(stored, password string) bool {
+	if strings.HasPrefix(stored, longPasswordPrefix) {
+		return bcrypt.CompareHashAndPassword([]byte(strings.TrimPrefix(stored, longPasswordPrefix)), passwordInput(password)) == nil
+	}
+	return bcrypt.CompareHashAndPassword([]byte(stored), []byte(password)) == nil
+}
 
 func newID() (string, error) {
 	var b [16]byte
@@ -99,18 +130,18 @@ func loadUsers(path, adminName, adminPassword string) (*UserStore, error) {
 	if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	if !usernamePattern.MatchString(adminName) || len(adminPassword) < 12 {
-		return nil, fmt.Errorf("bootstrap admin requires a valid username and password of at least 12 characters")
+	if !usernamePattern.MatchString(adminName) || adminPassword == "" {
+		return nil, fmt.Errorf("bootstrap admin requires a valid username and a non-empty password")
 	}
 	id, err := newID()
 	if err != nil {
 		return nil, err
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.DefaultCost)
+	hash, err := hashPassword(adminPassword)
 	if err != nil {
 		return nil, err
 	}
-	s.users = []User{{ID: id, Username: adminName, Role: "admin", PasswordHash: string(hash)}}
+	s.users = []User{{ID: id, Username: adminName, Role: "admin", PasswordHash: hash}}
 	if err := writeJSONFile(path, s.users); err != nil {
 		return nil, err
 	}
@@ -132,7 +163,7 @@ func (s *UserStore) authenticate(username, password string) (User, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, u := range s.users {
-		if strings.EqualFold(u.Username, username) && bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) == nil {
+		if strings.EqualFold(u.Username, username) && passwordMatches(u.PasswordHash, password) {
 			return u, true
 		}
 	}
@@ -155,7 +186,7 @@ func (s *UserStore) verifyPassword(id, password string) bool {
 	defer s.mu.Unlock()
 	for _, u := range s.users {
 		if u.ID == id {
-			return bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) == nil
+			return passwordMatches(u.PasswordHash, password)
 		}
 	}
 	return false
@@ -175,13 +206,13 @@ func (s *UserStore) add(username, password, role string) (UserView, error) {
 	if !usernamePattern.MatchString(username) {
 		return UserView{}, fmt.Errorf("username: 3–32 Latin letters, digits, dot, underscore or dash")
 	}
-	if len(password) < 12 {
-		return UserView{}, fmt.Errorf("password must contain at least 12 characters")
+	if password == "" {
+		return UserView{}, fmt.Errorf("password cannot be empty")
 	}
 	if role != "admin" && role != "user" {
 		return UserView{}, fmt.Errorf("role must be admin or user")
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := hashPassword(password)
 	if err != nil {
 		return UserView{}, err
 	}
@@ -196,7 +227,7 @@ func (s *UserStore) add(username, password, role string) (UserView, error) {
 			return UserView{}, fmt.Errorf("username already exists")
 		}
 	}
-	user := User{ID: id, Username: username, Role: role, PasswordHash: string(hash)}
+	user := User{ID: id, Username: username, Role: role, PasswordHash: hash}
 	next := append(append([]User(nil), s.users...), user)
 	if err := writeJSONFile(s.path, next); err != nil {
 		return UserView{}, err
@@ -206,10 +237,10 @@ func (s *UserStore) add(username, password, role string) (UserView, error) {
 }
 
 func (s *UserStore) changePassword(id, password string) error {
-	if len(password) < 12 {
-		return fmt.Errorf("password must contain at least 12 characters")
+	if password == "" {
+		return fmt.Errorf("password cannot be empty")
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := hashPassword(password)
 	if err != nil {
 		return err
 	}
@@ -218,7 +249,7 @@ func (s *UserStore) changePassword(id, password string) error {
 	next := append([]User(nil), s.users...)
 	for i := range next {
 		if next[i].ID == id {
-			next[i].PasswordHash = string(hash)
+			next[i].PasswordHash = hash
 			if err := writeJSONFile(s.path, next); err != nil {
 				return err
 			}

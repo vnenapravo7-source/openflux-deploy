@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const panelVersion = "0.4.0"
+const panelVersion = "0.4.1"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -534,7 +534,11 @@ func main() {
 	mux.HandleFunc("/api/login", srv.login)
 	mux.HandleFunc("/api/", srv.api)
 	mux.HandleFunc("/node/v1/", srv.nodeAPI)
-	mux.Handle("/", http.FileServer(http.FS(web)))
+	staticHandler := http.FileServer(http.FS(web))
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		staticHandler.ServeHTTP(w, r)
+	}))
 	server := &http.Server{Addr: env("OPENFLUX_LISTEN", ":8088"), Handler: srv.auth(mux), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	cert, key := os.Getenv("OPENFLUX_TLS_CERT"), os.Getenv("OPENFLUX_TLS_KEY")
 	log.Printf("OpenFlux panel %s listening on %s", panelVersion, server.Addr)

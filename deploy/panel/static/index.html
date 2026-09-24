@@ -82,8 +82,8 @@
         <article class="card form-card account-card"><div class="card-head"><div><h2>Сменить пароль</h2><p>Все активные сеансы будут завершены</p></div></div>
           <form id="passwordForm" class="account-form">
             <label><span>Текущий пароль</span><input id="passwordCurrent" type="password" required autocomplete="current-password"></label>
-            <label><span>Новый пароль · не менее 12 символов</span><input id="passwordNew" type="password" required minlength="12" autocomplete="new-password"></label>
-            <label><span>Повторите новый пароль</span><input id="passwordConfirm" type="password" required minlength="12" autocomplete="new-password"></label>
+            <label><span>Новый пароль</span><input id="passwordNew" type="password" required autocomplete="new-password"></label>
+            <label><span>Повторите новый пароль</span><input id="passwordConfirm" type="password" required autocomplete="new-password"></label>
             <button class="primary" type="submit">Сменить пароль</button>
           </form>
         </article>
@@ -94,13 +94,13 @@
           <form id="editUserForm" class="node-form hidden user-edit-form">
             <h3 id="editUserTitle">Изменить пользователя</h3>
             <label id="editUsernameField"><span>Новый логин</span><input id="editUsername" minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]+" autocomplete="off"></label>
-            <label id="editPasswordField"><span>Новый пароль · от 12 символов</span><input id="editPassword" type="password" minlength="12" autocomplete="new-password"></label>
-            <label id="editPasswordConfirmField"><span>Повторите пароль</span><input id="editPasswordConfirm" type="password" minlength="12" autocomplete="new-password"></label>
+            <label id="editPasswordField"><span>Новый пароль</span><input id="editPassword" type="password" autocomplete="new-password"></label>
+            <label id="editPasswordConfirmField"><span>Повторите пароль</span><input id="editPasswordConfirm" type="password" autocomplete="new-password"></label>
             <div class="node-form-actions"><button id="cancelUserEdit" class="secondary" type="button">Отмена</button><button class="primary" type="submit">Сохранить</button></div>
           </form>
           <form id="userForm" class="node-form">
             <label><span>Логин</span><input id="userName" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]+" autocomplete="off"></label>
-            <label><span>Пароль · от 12 символов</span><input id="userPassword" type="password" minlength="12" required autocomplete="new-password"></label>
+            <label><span>Пароль</span><input id="userPassword" type="password" required autocomplete="new-password"></label>
             <label><span>Роль</span><select id="userRole"><option value="user">Пользователь</option><option value="admin">Администратор</option></select></label>
             <div class="node-form-actions"><button class="primary" type="submit">Добавить пользователя</button></div>
           </form>
