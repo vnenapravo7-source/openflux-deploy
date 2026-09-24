@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestValidateConfig(t *testing.T) {
@@ -32,6 +34,106 @@ func TestValidateConfig(t *testing.T) {
 				t.Fatalf("validateConfig() error = %v, want ok=%v", err, tc.ok)
 			}
 		})
+	}
+}
+
+func TestUsernameChangeRequiresPasswordAndIsUnique(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("current-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := User{ID: "owner", Username: "alice", Role: "user", PasswordHash: string(hash)}
+	other := User{ID: "other", Username: "bob", Role: "user", PasswordHash: string(hash)}
+	store := &UserStore{path: filepath.Join(t.TempDir(), "users.json"), users: []User{owner, other}}
+	s := &server{users: store, sessions: map[string]session{"valid": {userID: owner.ID, expires: time.Now().Add(time.Hour)}}}
+	handler := s.auth(http.HandlerFunc(s.api))
+	change := func(username, password string) int {
+		body, _ := json.Marshal(map[string]string{"username": username, "current_password": password})
+		req := httptest.NewRequest(http.MethodPut, "/api/users/owner/username", strings.NewReader(string(body)))
+		req.AddCookie(&http.Cookie{Name: "of_session", Value: "valid"})
+		req.Header.Set("X-OpenFlux-Action", "1")
+		req.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		return response.Code
+	}
+	if got := change("alice2", "wrong"); got != http.StatusForbidden {
+		t.Fatalf("wrong current password: %d", got)
+	}
+	if got := change("BOB", "current-password"); got != http.StatusBadRequest {
+		t.Fatalf("duplicate username: %d", got)
+	}
+	if got := change("alice2", "current-password"); got != http.StatusOK {
+		t.Fatalf("valid rename: %d", got)
+	}
+	if u, ok := store.get("owner"); !ok || u.Username != "alice2" {
+		t.Fatalf("renamed user: %+v", u)
+	}
+	if len(s.sessions) != 0 {
+		t.Fatal("old session survived username change")
+	}
+}
+
+func TestPasswordChangeInvalidatesSessions(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("current-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := User{ID: "owner", Username: "alice", Role: "user", PasswordHash: string(hash)}
+	store := &UserStore{path: filepath.Join(t.TempDir(), "users.json"), users: []User{owner}}
+	s := &server{users: store, sessions: map[string]session{"valid": {userID: owner.ID, expires: time.Now().Add(time.Hour)}}}
+	handler := s.auth(http.HandlerFunc(s.api))
+	change := func(current string) int {
+		body, _ := json.Marshal(map[string]string{"password": "new-long-password", "current_password": current})
+		req := httptest.NewRequest(http.MethodPut, "/api/users/owner/password", strings.NewReader(string(body)))
+		req.AddCookie(&http.Cookie{Name: "of_session", Value: "valid"})
+		req.Header.Set("X-OpenFlux-Action", "1")
+		req.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		return response.Code
+	}
+	if got := change("wrong"); got != http.StatusForbidden {
+		t.Fatalf("wrong current password: %d", got)
+	}
+	if got := change("current-password"); got != http.StatusOK {
+		t.Fatalf("valid password change: %d", got)
+	}
+	if len(s.sessions) != 0 {
+		t.Fatal("old session survived password change")
+	}
+	if _, ok := store.authenticate("alice", "new-long-password"); !ok {
+		t.Fatal("new password not accepted")
+	}
+	if _, ok := store.authenticate("alice", "current-password"); ok {
+		t.Fatal("old password still accepted")
+	}
+}
+
+func TestAdminCanResetOtherUsersPassword(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("old-long-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := User{ID: "admin", Username: "admin", Role: "admin", PasswordHash: string(hash)}
+	target := User{ID: "target", Username: "member", Role: "user", PasswordHash: string(hash)}
+	store := &UserStore{path: filepath.Join(t.TempDir(), "users.json"), users: []User{admin, target}}
+	s := &server{users: store, sessions: map[string]session{"admin-session": {userID: admin.ID, expires: time.Now().Add(time.Hour)}, "target-session": {userID: target.ID, expires: time.Now().Add(time.Hour)}}}
+	handler := s.auth(http.HandlerFunc(s.api))
+	req := httptest.NewRequest(http.MethodPut, "/api/users/target/password", strings.NewReader(`{"password":"replacement-password"}`))
+	req.AddCookie(&http.Cookie{Name: "of_session", Value: "admin-session"})
+	req.Header.Set("X-OpenFlux-Action", "1")
+	req.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("admin reset: %d %s", response.Code, response.Body.String())
+	}
+	if len(s.sessions) != 1 {
+		t.Fatalf("unexpected sessions after reset: %v", s.sessions)
+	}
+	if _, ok := store.authenticate("member", "replacement-password"); !ok {
+		t.Fatal("replacement password not accepted")
 	}
 }
 
@@ -116,6 +218,15 @@ func TestStateRequiresSessionAndHidesOtherConnections(t *testing.T) {
 	handler.ServeHTTP(usersResponse, usersRequest)
 	if usersResponse.Code != http.StatusForbidden {
 		t.Fatalf("user listing: %d", usersResponse.Code)
+	}
+	otherRename := httptest.NewRequest(http.MethodPut, "/api/users/other/username", strings.NewReader(`{"username":"stolen"}`))
+	otherRename.AddCookie(&http.Cookie{Name: "of_session", Value: "valid"})
+	otherRename.Header.Set("X-OpenFlux-Action", "1")
+	otherRename.Header.Set("Content-Type", "application/json")
+	renameResponse := httptest.NewRecorder()
+	handler.ServeHTTP(renameResponse, otherRename)
+	if renameResponse.Code != http.StatusForbidden {
+		t.Fatalf("renaming other user allowed: %d", renameResponse.Code)
 	}
 	panelUpdate := httptest.NewRequest(http.MethodPost, "/api/update-panel", nil)
 	panelUpdate.AddCookie(&http.Cookie{Name: "of_session", Value: "valid"})

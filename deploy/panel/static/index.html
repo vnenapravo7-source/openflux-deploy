@@ -20,6 +20,7 @@
       <nav>
         <button class="nav active" data-view="overview">Обзор</button>
         <button class="nav" data-view="connections">Подключения <span id="connectionCount" class="badge">0</span></button>
+        <button class="nav" data-view="account">Мой профиль</button>
         <button class="nav admin-only" data-view="users">Пользователи</button>
         <button class="nav admin-only" data-view="nodes">Ноды <span id="nodeCount" class="badge">0</span></button>
         <button class="nav" data-view="logs">Журнал</button>
@@ -70,9 +71,33 @@
           </form>
         </article>
       </section>
+      <section id="view-account" class="view">
+        <article class="card form-card"><div class="card-head"><div><h2>Сменить логин</h2><p>После изменения потребуется войти заново</p></div></div>
+          <form id="usernameForm" class="account-form">
+            <label><span>Новый логин</span><input id="accountUsername" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]+" autocomplete="username"></label>
+            <label><span>Текущий пароль</span><input id="usernameCurrentPassword" type="password" required autocomplete="current-password"></label>
+            <button class="primary" type="submit">Сменить логин</button>
+          </form>
+        </article>
+        <article class="card form-card account-card"><div class="card-head"><div><h2>Сменить пароль</h2><p>Все активные сеансы будут завершены</p></div></div>
+          <form id="passwordForm" class="account-form">
+            <label><span>Текущий пароль</span><input id="passwordCurrent" type="password" required autocomplete="current-password"></label>
+            <label><span>Новый пароль · не менее 12 символов</span><input id="passwordNew" type="password" required minlength="12" autocomplete="new-password"></label>
+            <label><span>Повторите новый пароль</span><input id="passwordConfirm" type="password" required minlength="12" autocomplete="new-password"></label>
+            <button class="primary" type="submit">Сменить пароль</button>
+          </form>
+        </article>
+      </section>
       <section id="view-users" class="view admin-only">
         <article class="card"><div class="card-head"><div><h2>Пользователи</h2><p>Обычный пользователь видит только свои подключения</p></div></div>
           <div id="usersList" class="connection-list"></div>
+          <form id="editUserForm" class="node-form hidden user-edit-form">
+            <h3 id="editUserTitle">Изменить пользователя</h3>
+            <label id="editUsernameField"><span>Новый логин</span><input id="editUsername" minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]+" autocomplete="off"></label>
+            <label id="editPasswordField"><span>Новый пароль · от 12 символов</span><input id="editPassword" type="password" minlength="12" autocomplete="new-password"></label>
+            <label id="editPasswordConfirmField"><span>Повторите пароль</span><input id="editPasswordConfirm" type="password" minlength="12" autocomplete="new-password"></label>
+            <div class="node-form-actions"><button id="cancelUserEdit" class="secondary" type="button">Отмена</button><button class="primary" type="submit">Сохранить</button></div>
+          </form>
           <form id="userForm" class="node-form">
             <label><span>Логин</span><input id="userName" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]+" autocomplete="off"></label>
             <label><span>Пароль · от 12 символов</span><input id="userPassword" type="password" minlength="12" required autocomplete="new-password"></label>

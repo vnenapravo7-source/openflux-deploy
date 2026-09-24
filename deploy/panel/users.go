@@ -150,6 +150,17 @@ func (s *UserStore) get(id string) (User, bool) {
 	return User{}, false
 }
 
+func (s *UserStore) verifyPassword(id, password string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, u := range s.users {
+		if u.ID == id {
+			return bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) == nil
+		}
+	}
+	return false
+}
+
 func (s *UserStore) list() []UserView {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -216,6 +227,34 @@ func (s *UserStore) changePassword(id, password string) error {
 		}
 	}
 	return os.ErrNotExist
+}
+
+func (s *UserStore) changeUsername(id, username string) error {
+	if !usernamePattern.MatchString(username) {
+		return fmt.Errorf("username: 3–32 Latin letters, digits, dot, underscore or dash")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index := -1
+	for i, u := range s.users {
+		if u.ID == id {
+			index = i
+			continue
+		}
+		if strings.EqualFold(u.Username, username) {
+			return fmt.Errorf("username already exists")
+		}
+	}
+	if index < 0 {
+		return os.ErrNotExist
+	}
+	next := append([]User(nil), s.users...)
+	next[index].Username = username
+	if err := writeJSONFile(s.path, next); err != nil {
+		return err
+	}
+	s.users = next
+	return nil
 }
 
 func (s *UserStore) delete(id string) error {

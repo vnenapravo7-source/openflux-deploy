@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const panelVersion = "0.3.0"
+const panelVersion = "0.4.0"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -228,6 +228,34 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, view)
 	case strings.HasPrefix(path, "/api/users/"):
 		id := strings.TrimPrefix(path, "/api/users/")
+		if strings.HasSuffix(id, "/username") && r.Method == http.MethodPut {
+			id = strings.TrimSuffix(id, "/username")
+			if u.ID != id && !requireAdmin(w, u) {
+				return
+			}
+			if !requireAction(w, r) {
+				return
+			}
+			var input struct {
+				Username        string `json:"username"`
+				CurrentPassword string `json:"current_password"`
+			}
+			if err := decodeBody(w, r, &input); err != nil {
+				apiError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if u.ID == id && !s.users.verifyPassword(id, input.CurrentPassword) {
+				apiError(w, http.StatusForbidden, "current password is incorrect")
+				return
+			}
+			if err := s.users.changeUsername(id, input.Username); err != nil {
+				apiError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			s.invalidateUser(id)
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+			return
+		}
 		if strings.HasSuffix(id, "/password") && r.Method == http.MethodPut {
 			id = strings.TrimSuffix(id, "/password")
 			if u.ID != id && !requireAdmin(w, u) {
@@ -237,10 +265,15 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			var input struct {
-				Password string `json:"password"`
+				Password        string `json:"password"`
+				CurrentPassword string `json:"current_password"`
 			}
 			if err := decodeBody(w, r, &input); err != nil {
 				apiError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if u.ID == id && !s.users.verifyPassword(id, input.CurrentPassword) {
+				apiError(w, http.StatusForbidden, "current password is incorrect")
 				return
 			}
 			if err := s.users.changePassword(id, input.Password); err != nil {

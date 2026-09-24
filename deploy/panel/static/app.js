@@ -1,7 +1,7 @@
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const names = {yandex:"Yandex Docs",vyandex:"Yandex Volga",mailru:"Mail.ru Docs",cupsonline:"Cups.online"};
-let state = null, users = [], editing = null, selectedLog = "", activeView = "overview";
+let state = null, users = [], editing = null, editingUser = null, editUserAction = "", selectedLog = "", activeView = "overview";
 
 async function api(path, options={}) {
   const response = await fetch(path, {credentials:"same-origin",...options,headers:{"X-OpenFlux-Action":"1",...(options.headers||{})}});
@@ -21,7 +21,7 @@ function navigate(view){
   activeView=view;
   $$(".nav").forEach(el=>el.classList.toggle("active",el.dataset.view===view));
   $$(".view").forEach(el=>el.classList.toggle("active",el.id===`view-${view}`));
-  $("#pageTitle").textContent={overview:"Обзор",connections:"Подключения",users:"Пользователи",nodes:"Ноды",logs:"Журнал"}[view];
+  $("#pageTitle").textContent={overview:"Обзор",connections:"Подключения",account:"Мой профиль",users:"Пользователи",nodes:"Ноды",logs:"Журнал"}[view];
   if(view==="users")loadUsers();
   if(view==="overview"&&state?.me.role==="admin")drawChart(state.traffic||[]);
 }
@@ -65,14 +65,24 @@ function renderNodes(nodes=[]){
   $("#nodesList").innerHTML=nodes.length?nodes.map(n=>`<div class="node ${n.online?'':'offline'}"><div class="node-name"><b>${esc(n.name)}</b><small>${esc(n.base_url)}</small></div><div class="node-metric"><span>Статус</span><b>${n.online?(n.running?'Работает':'Остановлена'):'Нет связи'}</b></div><div class="node-metric"><span>Подключений</span><b>${n.connections||0}</b></div><div class="node-metric"><span>Трафик</span><b>↓ ${bytes(n.rx)} · ↑ ${bytes(n.tx)}</b></div><div class="node-actions"><button data-node-action="restart" data-id="${esc(n.id)}" title="Перезапустить">↻</button><button data-node-action="update" data-id="${esc(n.id)}" title="Обновить">⇣</button><button data-node-action="delete" data-id="${esc(n.id)}" title="Удалить">×</button></div>${n.error?`<small>${esc(n.error)}</small>`:""}</div>`).join(""):'<div class="empty">Подключённых нод пока нет.</div>';
 }
 function renderUsers(){
-  $("#usersList").innerHTML=users.map(u=>`<div class="user-row"><div><b>${esc(u.username)}</b><small>${u.role==="admin"?"Администратор":"Пользователь"} · ${state.connections.filter(c=>c.owner_id===u.id).length} подключений</small></div><div class="header-actions"><button class="secondary small" data-user-action="password" data-id="${esc(u.id)}">Сменить пароль</button>${u.id!==state.me.id?`<button class="danger small" data-user-action="delete" data-id="${esc(u.id)}">Удалить</button>`:""}</div></div>`).join("");
+  $("#usersList").innerHTML=users.map(u=>`<div class="user-row"><div><b>${esc(u.username)}</b><small>${u.role==="admin"?"Администратор":"Пользователь"} · ${state.connections.filter(c=>c.owner_id===u.id).length} подключений</small></div><div class="header-actions">${u.id===state.me.id?`<button class="secondary small" data-user-action="self" data-id="${esc(u.id)}">Мой профиль</button>`:`<button class="secondary small" data-user-action="username" data-id="${esc(u.id)}">Изменить логин</button><button class="secondary small" data-user-action="password" data-id="${esc(u.id)}">Сменить пароль</button><button class="danger small" data-user-action="delete" data-id="${esc(u.id)}">Удалить</button>`}</div></div>`).join("");
   $("#connectionOwner").innerHTML=users.map(u=>`<option value="${esc(u.id)}">${esc(u.username)}</option>`).join("");
 }
 async function loadUsers(){if(state?.me.role!=="admin")return;try{users=await api("/api/users");renderUsers();renderConnections();}catch(e){toast(e.message,true)}}
+function openUserEditor(user,action){
+  editingUser=user.id;editUserAction=action;
+  $("#editUserTitle").textContent=`${action==="username"?"Изменить логин":"Сменить пароль"}: ${user.username}`;
+  $("#editUserForm").reset();$("#editUsername").value=user.username;
+  $("#editUsernameField").classList.toggle("hidden",action!=="username");$("#editUsername").required=action==="username";
+  $("#editPasswordField").classList.toggle("hidden",action!=="password");$("#editPassword").required=action==="password";
+  $("#editPasswordConfirmField").classList.toggle("hidden",action!=="password");$("#editPasswordConfirm").required=action==="password";
+  $("#editUserForm").classList.remove("hidden");$("#editUserForm").scrollIntoView({behavior:"smooth"});
+}
 function render(){
   showApp();const admin=state.me.role==="admin",connections=state.connections||[],running=connections.filter(c=>c.running).length;
   $$(".admin-only").forEach(el=>el.classList.toggle("hidden",!admin));
   $("#accountLabel").textContent=`${state.me.username} · ${admin?"АДМИНИСТРАТОР":"ПОЛЬЗОВАТЕЛЬ"}`;
+  if(!$("#usernameForm").dataset.dirty)$("#accountUsername").value=state.me.username;
   $("#connectionCount").textContent=connections.length;$("#connectionTotal").textContent=connections.length;$("#runningTotal").textContent=`${running} работают`;
   const pill=$("#statusPill");pill.className=`status ${running?'online':'offline'}`;pill.innerHTML=`<i></i>${running} / ${connections.length} работают`;
   $("#version").textContent=(state.upstream_version||"unknown").slice(0,12);$("#panelVersion").textContent=`панель ${state.panel_version} · ${(state.panel_revision||"unknown").slice(0,8)}`;
@@ -110,7 +120,8 @@ document.addEventListener("click",async event=>{
     }
     if(button.dataset.nodeAction){if(action==="delete"&&!confirm("Удалить ноду из панели? На сервере ничего не изменится."))return;await api(`/api/nodes/${id}${action==="delete"?"":`/${action}`}`,{method:action==="delete"?"DELETE":"POST"});toast(action==="delete"?"Нода удалена":"Команда отправлена");return refresh()}
     if(button.dataset.userAction){const user=users.find(u=>u.id===id);if(!user)return;
-      if(action==="password"){const password=prompt(`Новый пароль для ${user.username} (от 12 символов):`);if(password===null)return;await api(`/api/users/${id}/password`,{method:"PUT",...json({password})});toast("Пароль изменён; активные сеансы завершены");if(id===state.me.id)return showLogin()}
+      if(action==="self")return navigate("account");
+      if(action==="username"||action==="password")return openUserEditor(user,action);
       if(action==="delete"){if(!confirm(`Удалить ${user.username} и все его подключения?`))return;await api(`/api/users/${id}`,{method:"DELETE"});toast("Пользователь удалён");await refresh()}return loadUsers();
     }
   }catch(e){toast(e.message,true)}
@@ -120,6 +131,20 @@ $("#copyLogs").onclick=async()=>{try{await navigator.clipboard.writeText($("#log
 $("#loginForm").onsubmit=async event=>{event.preventDefault();try{await api("/api/login",{method:"POST",...json({username:$("#loginName").value.trim(),password:$("#loginPassword").value})});$("#loginPassword").value="";$("#loginError").textContent="";await refresh();if(state?.me.role==="admin")await loadUsers();}catch(e){$("#loginError").textContent=e.message}};
 $("#logoutBtn").onclick=async()=>{try{await api("/api/logout",{method:"POST"})}catch(_){}showLogin()};
 $("#userForm").onsubmit=async event=>{event.preventDefault();try{await api("/api/users",{method:"POST",...json({username:$("#userName").value.trim(),password:$("#userPassword").value,role:$("#userRole").value})});event.target.reset();toast("Пользователь создан");await loadUsers()}catch(e){toast(e.message,true)}};
+$("#cancelUserEdit").onclick=()=>$("#editUserForm").classList.add("hidden");
+$("#editUserForm").onsubmit=async event=>{event.preventDefault();if(!editingUser)return;
+  try{
+    if(editUserAction==="username")await api(`/api/users/${editingUser}/username`,{method:"PUT",...json({username:$("#editUsername").value.trim()})});
+    if(editUserAction==="password"){
+      const password=$("#editPassword").value;if(password!==$("#editPasswordConfirm").value){toast("Новые пароли не совпадают",true);return}
+      await api(`/api/users/${editingUser}/password`,{method:"PUT",...json({password})});
+    }
+    event.target.reset();event.target.classList.add("hidden");editingUser=null;toast("Данные пользователя изменены; его сеансы завершены");await refresh();await loadUsers();
+  }catch(e){toast(e.message,true)}
+};
+$("#usernameForm").addEventListener("input",()=>$("#usernameForm").dataset.dirty="1");
+$("#usernameForm").onsubmit=async event=>{event.preventDefault();const username=$("#accountUsername").value.trim();try{await api(`/api/users/${state.me.id}/username`,{method:"PUT",...json({username,current_password:$("#usernameCurrentPassword").value})});event.target.reset();delete event.target.dataset.dirty;showLogin();$("#loginName").value=username;toast("Логин изменён. Войдите снова.")}catch(e){toast(e.message,true)}};
+$("#passwordForm").onsubmit=async event=>{event.preventDefault();const password=$("#passwordNew").value;if(password!==$("#passwordConfirm").value){toast("Новые пароли не совпадают",true);return}try{await api(`/api/users/${state.me.id}/password`,{method:"PUT",...json({password,current_password:$("#passwordCurrent").value})});event.target.reset();showLogin();toast("Пароль изменён. Войдите снова.")}catch(e){toast(e.message,true)}};
 $("#autoUpdate").onchange=async event=>{try{await api("/api/settings",{method:"PUT",...json({auto_update:event.target.checked})});toast("Настройка обновления сохранена")}catch(e){event.target.checked=!event.target.checked;toast(e.message,true)}};
 $("#updateBtn").onclick=async()=>{try{await api("/api/update",{method:"POST"});toast("Обновление запущено")}catch(e){toast(e.message,true)}};
 $("#updatePanelBtn").onclick=async()=>{try{await api("/api/update-panel",{method:"POST"});toast("Обновление панели запущено. После перезапуска войдите снова.");await refresh()}catch(e){toast(e.message,true)}};
