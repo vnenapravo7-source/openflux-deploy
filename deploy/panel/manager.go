@@ -115,7 +115,7 @@ func defaults() Config { return Config{Transport: "yandex", Mode: "l4", Codec: "
 
 func validateConfig(c Config) error {
 	switch c.Transport {
-	case "yandex", "vyandex", "mailru", "cupsonline":
+	case "yandex", "vyandex", "boards", "mailru", "cupsonline":
 	default:
 		return fmt.Errorf("unsupported transport %q", c.Transport)
 	}
@@ -135,6 +135,9 @@ func validateConfig(c Config) error {
 		u, err := url.ParseRequestURI(c.URL)
 		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil {
 			return fmt.Errorf("document URL must be an http(s) URL")
+		}
+		if c.Transport == "boards" && (u.Scheme != "https" || !strings.EqualFold(u.Hostname(), "boards.yandex.ru") || strings.TrimSpace(u.Query().Get("hash")) == "") {
+			return fmt.Errorf("Yandex Board requires an https://boards.yandex.ru/... URL with a hash parameter")
 		}
 	}
 	return nil

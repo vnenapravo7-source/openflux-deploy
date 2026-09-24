@@ -1,6 +1,6 @@
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
-const names = {yandex:"Yandex Docs",vyandex:"Yandex Volga",mailru:"Mail.ru Docs",cupsonline:"Cups.online"};
+const names = {yandex:"Yandex Docs",vyandex:"Yandex Volga",boards:"Yandex Board",mailru:"Mail.ru Docs",cupsonline:"Cups.online"};
 let state = null, users = [], editing = null, editingUser = null, editUserAction = "", selectedLog = "", activeView = "overview";
 
 async function api(path, options={}) {
@@ -91,7 +91,7 @@ function render(){
 }
 async function refresh(){try{state=await api("/api/state");render();}catch(e){if(e.status===401)showLogin();else if(state)toast(`Нет связи с панелью: ${e.message}`,true);else showLogin();}}
 
-function transportChanged(){const cups=$("#transport").value==="cupsonline";$("#urlField").classList.toggle("hidden",cups);$("#docUrl").required=!cups&&$("#enabled").checked;}
+function transportChanged(){const kind=$("#transport").value,cups=kind==="cupsonline",boards=kind==="boards";$("#urlField").classList.toggle("hidden",cups);$("#docUrl").required=!cups&&$("#enabled").checked;$("#urlLabel").textContent=boards?"Публичная ссылка на доску":"Публичная ссылка на документ";$("#docUrl").placeholder=boards?"https://boards.yandex.ru/guest/?hash=…":"https://…";$("#urlHint").textContent=boards?"Нужна гостевая ссылка с параметром hash. Клиент на телефоне тоже должен поддерживать boards.":"Доступ по ссылке должен быть разрешён.";}
 $("#transport").onchange=transportChanged;$("#enabled").onchange=transportChanged;
 function openConnection(c){
   editing=c?.id||null;$("#editorTitle").textContent=c?`Настроить: ${c.name}`:"Новое подключение";

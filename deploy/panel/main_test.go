@@ -23,6 +23,10 @@ func TestValidateConfig(t *testing.T) {
 		{"disabled defaults", defaults(), true},
 		{"yandex needs url", Config{Enabled: true, Transport: "yandex", Mode: "l3", Codec: "batched"}, false},
 		{"yandex url", Config{Enabled: true, Transport: "yandex", URL: "https://docs.yandex.ru/docs/view", Mode: "l3", Codec: "batched"}, true},
+		{"board url", Config{Enabled: true, Transport: "boards", URL: "https://boards.yandex.ru/guest/?hash=example", Mode: "l4", Codec: "batched"}, true},
+		{"board missing hash", Config{Enabled: true, Transport: "boards", URL: "https://boards.yandex.ru/guest/", Mode: "l4", Codec: "batched"}, false},
+		{"board wrong host", Config{Enabled: true, Transport: "boards", URL: "https://example.com/guest/?hash=example", Mode: "l4", Codec: "batched"}, false},
+		{"board insecure url", Config{Enabled: true, Transport: "boards", URL: "http://boards.yandex.ru/guest/?hash=example", Mode: "l4", Codec: "batched"}, false},
 		{"cups no url", Config{Enabled: true, Transport: "cupsonline", Mode: "l4", Codec: "legacy"}, true},
 		{"bad scheme", Config{Enabled: true, Transport: "mailru", URL: "file:///etc/passwd", Mode: "l3", Codec: "batched"}, false},
 		{"unknown transport", Config{Transport: "other", Mode: "l3", Codec: "batched"}, false},
@@ -34,6 +38,14 @@ func TestValidateConfig(t *testing.T) {
 				t.Fatalf("validateConfig() error = %v, want ok=%v", err, tc.ok)
 			}
 		})
+	}
+}
+
+func TestBoardConnectionArgs(t *testing.T) {
+	c := Connection{Config: Config{Transport: "boards", URL: "https://boards.yandex.ru/guest/?hash=example", Mode: "l4", Codec: "batched"}}
+	args := strings.Join(connectionArgs(c), " ")
+	if !strings.Contains(args, "--transport=boards") || !strings.Contains(args, "--url="+c.URL) {
+		t.Fatalf("board connection arguments: %s", args)
 	}
 }
 

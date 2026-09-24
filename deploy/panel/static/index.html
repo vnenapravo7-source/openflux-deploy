@@ -60,9 +60,9 @@
             <div class="form-grid">
               <label><span>Название</span><input id="connectionName" required maxlength="80" placeholder="Личное подключение"></label>
               <label id="ownerField" class="admin-only"><span>Владелец</span><select id="connectionOwner"></select></label>
-              <label><span>Сервис транспорта</span><select id="transport"><option value="yandex">Yandex Docs</option><option value="vyandex">Yandex Volga</option><option value="mailru">Mail.ru Docs</option><option value="cupsonline">Cups.online</option></select></label>
+              <label><span>Сервис транспорта</span><select id="transport"><option value="yandex">Yandex Docs</option><option value="vyandex">Yandex Volga</option><option value="boards">Yandex Board</option><option value="mailru">Mail.ru Docs</option><option value="cupsonline">Cups.online</option></select></label>
               <label><span>Режим выхода</span><select id="mode"><option value="l4">L4 · совместимый</option><option value="l3">L3 · Linux root</option></select></label>
-              <label class="wide" id="urlField"><span>Публичная ссылка на документ</span><input id="docUrl" type="url" placeholder="https://…" autocomplete="off"><small>Доступ по ссылке должен быть разрешён.</small></label>
+              <label class="wide" id="urlField"><span id="urlLabel">Публичная ссылка на документ</span><input id="docUrl" type="url" placeholder="https://…" autocomplete="off"><small id="urlHint">Доступ по ссылке должен быть разрешён.</small></label>
               <label><span>Кодек</span><select id="codec"><option value="batched">Batched + zstd</option><option value="legacy">Legacy LZ4</option></select></label>
               <label><span>Исходящий IP <em>необязательно</em></span><input id="localIp" placeholder="автоопределение" autocomplete="off"></label>
               <label class="wide"><span>Файл ключа шифрования <em>необязательно</em></span><input id="encryptionKey" placeholder="/etc/openflux-deploy/secret.key" autocomplete="off"><small>Одинаковый ключ должен быть установлен на сервере и клиенте.</small></label>
