@@ -100,6 +100,7 @@ type Manager struct {
 	panelUpdatePath    string
 	panelRevisionPath  string
 	panelUpdateLogPath string
+	rollbackCapable    bool
 	connections        []Connection
 	processes          map[string]*processState
 	nodes              []Node
@@ -107,8 +108,15 @@ type Manager struct {
 	autoUpdate         bool
 	updating           bool
 	updateError        string
+	serverAction       string
 	updatingPanel      bool
 	panelUpdateError   string
+	panelAction        string
+	checkingVersions   bool
+	latestUpstream     string
+	latestPanel        string
+	versionCheckError  string
+	lastVersionCheck   time.Time
 }
 
 func defaults() Config { return Config{Transport: "yandex", Mode: "l4", Codec: "batched"} }
@@ -151,7 +159,7 @@ func validateConnection(c Connection) error {
 }
 
 func NewManager(legacyPath, connectionsPath, nodesPath, binaryPath, versionPath, updatePath, adminID string) (*Manager, error) {
-	m := &Manager{legacyPath: legacyPath, connectionsPath: connectionsPath, nodesPath: nodesPath, binaryPath: binaryPath, versionPath: versionPath, updatePath: updatePath, panelUpdatePath: env("OPENFLUX_PANEL_UPDATE_SCRIPT", "/usr/local/lib/openflux-deploy/panel-update.sh"), panelRevisionPath: env("OPENFLUX_PANEL_REVISION_FILE", "/var/lib/openflux-deploy/panel-revision"), panelUpdateLogPath: env("OPENFLUX_PANEL_UPDATE_LOG", "/var/lib/openflux-deploy/panel-update.log"), processes: map[string]*processState{}, nodes: []Node{}, connections: []Connection{}, traffic: []TrafficPoint{}, autoUpdate: true}
+	m := &Manager{legacyPath: legacyPath, connectionsPath: connectionsPath, nodesPath: nodesPath, binaryPath: binaryPath, versionPath: versionPath, updatePath: updatePath, panelUpdatePath: env("OPENFLUX_PANEL_UPDATE_SCRIPT", "/usr/local/lib/openflux-deploy/panel-update.sh"), panelRevisionPath: env("OPENFLUX_PANEL_REVISION_FILE", "/var/lib/openflux-deploy/panel-revision"), panelUpdateLogPath: env("OPENFLUX_PANEL_UPDATE_LOG", "/var/lib/openflux-deploy/panel-update.log"), rollbackCapable: os.Getenv("OPENFLUX_ROLLBACK_CAPABLE") == "1", processes: map[string]*processState{}, nodes: []Node{}, connections: []Connection{}, traffic: []TrafficPoint{}, autoUpdate: true}
 	if raw, err := os.ReadFile(legacyPath); err == nil {
 		var old Config
 		if err := json.Unmarshal(raw, &old); err != nil {
@@ -595,9 +603,18 @@ func (m *Manager) state(user User) map[string]any {
 		state["auto_update"] = m.autoUpdate
 		state["updating"] = m.updating
 		state["update_error"] = m.updateError
+		state["server_action"] = m.serverAction
 		state["updating_panel"] = m.updatingPanel
 		state["panel_update_error"] = m.panelUpdateError
+		state["panel_action"] = m.panelAction
+		state["checking_versions"] = m.checkingVersions
+		state["latest_upstream"] = m.latestUpstream
+		state["latest_panel"] = m.latestPanel
+		state["version_check_error"] = m.versionCheckError
 		m.mu.Unlock()
+		state["rollback_capable"] = m.rollbackCapable
+		state["server_rollback_available"] = m.rollbackCapable && regularFile(m.binaryPath+".rollback") && regularFile(m.versionPath+".rollback")
+		state["panel_rollback_available"] = m.rollbackCapable && regularFile(filepath.Join(filepath.Dir(m.panelRevisionPath), "bin/openflux-panel.rollback")) && regularFile(m.panelRevisionPath+".rollback")
 		state["panel_update_log"] = tailFile(m.panelUpdateLogPath, 8192)
 		state["nodes"] = m.nodeViews()
 	}
@@ -624,6 +641,7 @@ func (m *Manager) update() error {
 	}
 	m.updating = true
 	m.updateError = ""
+	m.serverAction = "update"
 	m.mu.Unlock()
 	go func() {
 		cmd := exec.Command(m.updatePath, "--force")
@@ -638,7 +656,9 @@ func (m *Manager) update() error {
 	return nil
 }
 
-func (m *Manager) updatePanel() error {
+func (m *Manager) updatePanel() error { return m.runPanelScript("--force", "update") }
+
+func (m *Manager) runPanelScript(argument, action string) error {
 	m.mu.Lock()
 	if m.updating || m.updatingPanel {
 		m.mu.Unlock()
@@ -646,6 +666,7 @@ func (m *Manager) updatePanel() error {
 	}
 	m.updatingPanel = true
 	m.panelUpdateError = ""
+	m.panelAction = action
 	m.mu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(m.panelUpdateLogPath), 0700); err != nil {
 		m.mu.Lock()
@@ -662,7 +683,7 @@ func (m *Manager) updatePanel() error {
 		m.mu.Unlock()
 		return err
 	}
-	cmd := exec.Command(m.panelUpdatePath, "--force")
+	cmd := exec.Command(m.panelUpdatePath, argument)
 	cmd.Env = append(os.Environ(), fmt.Sprintf("OPENFLUX_PANEL_PID=%d", os.Getpid()))
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	if err := cmd.Start(); err != nil {

@@ -23,6 +23,8 @@ services:
       OPENFLUX_USERS: /etc/openflux-deploy/users.json
       OPENFLUX_CONNECTIONS: /etc/openflux-deploy/connections.json
       OPENFLUX_NODES: /etc/openflux-deploy/nodes.json
+      OPENFLUX_INSTRUCTIONS: /etc/openflux-deploy/instructions.json
+      OPENFLUX_INSTRUCTION_ASSETS: /var/lib/openflux-deploy/instruction-assets
       OPENFLUX_TLS_CERT: /etc/openflux-deploy/tls/cert.pem
       OPENFLUX_TLS_KEY: /etc/openflux-deploy/tls/key.pem
       OPENFLUX_BINARY: /var/lib/openflux-deploy/bin/openflux
@@ -30,6 +32,7 @@ services:
       OPENFLUX_UPDATE_SCRIPT: /usr/local/lib/openflux-deploy/update.sh
       OPENFLUX_PANEL_UPDATE_SCRIPT: /usr/local/lib/openflux-deploy/panel-update.sh
       OPENFLUX_PANEL_REVISION_FILE: /var/lib/openflux-deploy/panel-revision
+      OPENFLUX_ROLLBACK_CAPABLE: "1"
       OPENFLUX_DEPLOY_REPO: ${OPENFLUX_DEPLOY_REPO:-vnenapravo7-source/openflux-deploy}
       OPENFLUX_DEPLOY_REF: ${OPENFLUX_DEPLOY_REF:-main}
       OPENFLUX_UPSTREAM_REPO: ${OPENFLUX_UPSTREAM_REPO:-https://github.com/p1neappleXpress/OpenFlux.git}

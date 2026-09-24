@@ -153,12 +153,15 @@ OPENFLUX_CONFIG=$CONFIG_DIR/config.json
 OPENFLUX_USERS=$CONFIG_DIR/users.json
 OPENFLUX_CONNECTIONS=$CONFIG_DIR/connections.json
 OPENFLUX_NODES=$CONFIG_DIR/nodes.json
+OPENFLUX_INSTRUCTIONS=$CONFIG_DIR/instructions.json
+OPENFLUX_INSTRUCTION_ASSETS=$STATE_DIR/instruction-assets
 OPENFLUX_TLS_CERT=$CONFIG_DIR/tls/cert.pem
 OPENFLUX_TLS_KEY=$CONFIG_DIR/tls/key.pem
 OPENFLUX_VERSION_FILE=$STATE_DIR/upstream-version
 OPENFLUX_UPDATE_SCRIPT=/usr/local/lib/openflux-deploy/update.sh
 OPENFLUX_PANEL_UPDATE_SCRIPT=/usr/local/lib/openflux-deploy/panel-update.sh
 OPENFLUX_PANEL_REVISION_FILE=$STATE_DIR/panel-revision
+OPENFLUX_ROLLBACK_CAPABLE=1
 OPENFLUX_DEPLOY_REPO=$(escape_env "$REPO")
 OPENFLUX_DEPLOY_REF=$(escape_env "$REF")
 OPENFLUX_BINARY=$STATE_DIR/bin/openflux
@@ -173,8 +176,11 @@ install_systemd(){
   (cd "$PREFIX/source" && GOTOOLCHAIN=auto go build -trimpath -ldflags='-s -w' -o "$STATE_DIR/bin/openflux.new" .)
   (cd "$PREFIX/source/deploy/panel" && GOTOOLCHAIN=auto go build -trimpath -ldflags='-s -w' -o "$STATE_DIR/bin/openflux-panel.new" .)
   chmod 755 "$STATE_DIR/bin/openflux.new" "$STATE_DIR/bin/openflux-panel.new"
+  if [ -f "$STATE_DIR/bin/openflux" ]; then cp -p "$STATE_DIR/bin/openflux" "$STATE_DIR/bin/openflux.rollback"; fi
+  if [ -f "$STATE_DIR/upstream-version" ]; then cp -p "$STATE_DIR/upstream-version" "$STATE_DIR/upstream-version.rollback"; fi
   mv "$STATE_DIR/bin/openflux.new" "$STATE_DIR/bin/openflux"
   if [ -f "$STATE_DIR/bin/openflux-panel" ]; then cp -p "$STATE_DIR/bin/openflux-panel" "$STATE_DIR/bin/openflux-panel.rollback"; fi
+  if [ -f "$STATE_DIR/panel-revision" ]; then cp -p "$STATE_DIR/panel-revision" "$STATE_DIR/panel-revision.rollback"; fi
   mv "$STATE_DIR/bin/openflux-panel.new" "$STATE_DIR/bin/openflux-panel"
   printf '%s\n' "${DEPLOY_REVISION:-bundled}" >"$STATE_DIR/panel-revision"
   git -C "$PREFIX/source" rev-parse HEAD >"$STATE_DIR/upstream-version" 2>/dev/null || printf 'bundled\n' >"$STATE_DIR/upstream-version"
@@ -258,6 +264,7 @@ EOF
   export OPENFLUX_DEPLOY_REVISION="${DEPLOY_REVISION:-bundled}"
   (cd "$PREFIX" && docker compose build)
   touch "$STATE_DIR/panel-seed-next-start"
+  touch "$STATE_DIR/server-seed-next-start"
   (cd "$PREFIX" && docker compose up -d --no-build --force-recreate)
 }
 

@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">
-  <title>OpenFlux Control</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/responsive.css">
+  <title>OpenFlux Control</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/responsive.css"><link rel="stylesheet" href="/instructions.css">
 </head>
 <body>
   <section id="loginScreen" class="login-screen hidden">
@@ -20,6 +20,7 @@
       <nav>
         <button class="nav active" data-view="overview">Обзор</button>
         <button class="nav" data-view="connections">Подключения <span id="connectionCount" class="badge">0</span></button>
+        <button class="nav" data-view="instructions">Инструкции</button>
         <button class="nav" data-view="account">Мой профиль</button>
         <button class="nav admin-only" data-view="users">Пользователи</button>
         <button class="nav admin-only" data-view="nodes">Ноды <span id="nodeCount" class="badge">0</span></button>
@@ -36,6 +37,7 @@
         <div class="header-actions"><span id="statusPill" class="status waiting"><i></i>Загрузка</span><button id="newConnectionTop" class="primary small">+ Подключение</button></div>
       </header>
       <section id="view-overview" class="view active">
+        <div id="updateNotice" class="update-notice hidden" role="status"><div><strong>Доступны обновления</strong><small id="updateNoticeText"></small></div><div class="header-actions"><button id="offerServerUpdate" class="secondary small hidden">Обновить сервер</button><button id="offerPanelUpdate" class="secondary small hidden">Обновить панель</button></div></div>
         <div class="stats">
           <article class="stat"><span>Мои подключения</span><strong id="connectionTotal">0</strong><small id="runningTotal">0 работают</small></article>
           <article class="stat admin-only"><span>Входящий трафик</span><strong id="rxNow">—</strong><small>весь сервер</small></article>
@@ -44,12 +46,21 @@
         </div>
         <article class="card chart-card admin-only"><div class="card-head"><div><h2>Сетевой трафик сервера</h2><p>Последние 10 минут, все интерфейсы кроме loopback</p></div><div class="legend"><span><i class="rx"></i>RX</span><span><i class="tx"></i>TX</span></div></div><canvas id="trafficChart" height="250"></canvas></article>
         <article class="card"><div class="card-head"><div><h2>Подключения</h2><p>Каждое запускается как отдельный процесс OpenFlux</p></div><button class="text-btn" data-goto="connections">Открыть все</button></div><div id="overviewConnections" class="connection-list"></div></article>
-        <article class="card admin-only maintenance"><div class="card-head"><div><h2>Обслуживание</h2><p>Обновления не затрагивают пользователей и подключения</p></div></div>
-          <div class="maintenance-row"><div><b>Серверная часть</b><small>p1neappleXpress/OpenFlux · основной репозиторий</small></div><button id="updateBtn" class="secondary small">Обновить сервер</button></div>
+        <article class="card admin-only maintenance"><div class="card-head"><div><h2>Обслуживание</h2><p>Обновления не затрагивают пользователей и подключения</p></div><button id="checkUpdatesBtn" class="secondary small">Проверить версии</button></div>
+          <div class="maintenance-row"><div><b>Серверная часть</b><small>p1neappleXpress/OpenFlux · основной репозиторий</small><small id="serverVersionStatus"></small></div><div class="maintenance-actions"><button id="rollbackServerBtn" class="secondary small">Откатить сервер</button><button id="updateBtn" class="secondary small">Обновить сервер</button></div></div>
           <label class="check"><input id="autoUpdate" type="checkbox"><span>Автоматически обновлять серверную часть</span></label>
-          <div class="maintenance-row"><div><b>Веб-панель</b><small>vnenapravo7-source/openflux-deploy · после обновления потребуется повторный вход</small></div><button id="updatePanelBtn" class="secondary small">Обновить панель</button></div>
+          <div class="maintenance-row"><div><b>Веб-панель</b><small>vnenapravo7-source/openflux-deploy · после обновления потребуется повторный вход</small><small id="panelVersionStatus"></small></div><div class="maintenance-actions"><button id="rollbackPanelBtn" class="secondary small">Откатить панель</button><button id="updatePanelBtn" class="secondary small">Обновить панель</button></div></div>
+          <small id="serverUpdateStatus" role="status"></small>
           <small id="panelUpdateStatus" role="status"></small>
+          <small id="rollbackHint" class="hidden">Для кнопок отката один раз повторно запустите установщик, чтобы обновить сервис или Docker-образ.</small>
           <pre id="panelUpdateLog" class="panel-update-log hidden" aria-label="Журнал обновления панели"></pre>
+        </article>
+      </section>
+      <section id="view-instructions" class="view">
+        <article class="card"><div class="card-head"><div><h2>Инструкции</h2><p>Материалы для всех пользователей панели</p></div><div class="header-actions admin-only"><button id="addTextBlock" class="secondary small">+ Текст</button><button id="addMediaBlock" class="primary small">+ Файл или медиа</button></div></div>
+          <form id="instructionTextForm" class="instruction-editor hidden"><h3 id="instructionEditorTitle">Текстовый блок</h3><label><span>Заголовок <em>необязательно</em></span><input id="instructionTitle" maxlength="160" placeholder="Как подключиться"></label><div class="instruction-label"><span>Текст с форматированием</span><div class="format-toolbar"><button type="button" data-format="bold" title="Жирный">Ж</button><button type="button" data-format="italic" title="Курсив">К</button><button type="button" data-format="heading" title="Заголовок">H2</button><button type="button" data-format="list" title="Список">•</button><button type="button" data-format="link" title="Ссылка">🔗</button></div><textarea id="instructionBody" required maxlength="61440" rows="9" placeholder="Напишите инструкцию..."></textarea></div><div class="instruction-preview"><small>Предпросмотр</small><div id="instructionPreview"></div></div><div class="form-actions"><button id="cancelTextBlock" type="button" class="secondary">Отмена</button><button class="primary">Сохранить блок</button></div></form>
+          <form id="instructionUploadForm" class="instruction-editor hidden"><h3>Фото, видео или вложение</h3><label><span>Тип блока</span><select id="instructionKind"><option value="image">Фото</option><option value="video">Видео (MP4, WebM, MOV)</option><option value="file">Вложение</option></select></label><label><span>Заголовок <em>необязательно</em></span><input id="instructionMediaTitle" maxlength="160" placeholder="Название материала"></label><label><span>Файл</span><input id="instructionFile" type="file" required></label><small>Фото до 20 МБ, видео до 200 МБ, вложение до 50 МБ. Файлы сохраняются на сервере.</small><div class="form-actions"><button id="cancelMediaBlock" type="button" class="secondary">Отмена</button><button id="uploadInstructionBtn" class="primary">Загрузить</button></div></form>
+          <div id="instructionBlocks" class="instruction-blocks"><div class="empty">Инструкций пока нет.</div></div>
         </article>
       </section>
       <section id="view-connections" class="view">
@@ -63,6 +74,7 @@
               <label><span>Сервис транспорта</span><select id="transport"><option value="yandex">Yandex Docs</option><option value="vyandex">Yandex Volga</option><option value="boards">Yandex Board</option><option value="mailru">Mail.ru Docs</option><option value="cupsonline">Cups.online</option></select></label>
               <label><span>Режим выхода</span><select id="mode"><option value="l4">L4 · совместимый</option><option value="l3">L3 · Linux root</option></select></label>
               <label class="wide" id="urlField"><span id="urlLabel">Публичная ссылка на документ</span><input id="docUrl" type="url" placeholder="https://…" autocomplete="off"><small id="urlHint">Доступ по ссылке должен быть разрешён.</small></label>
+              <div id="transportGuide" class="transport-guide wide"><a id="transportServiceLink" target="_blank" rel="noopener noreferrer"></a><small id="transportTip"></small></div>
               <label><span>Кодек</span><select id="codec"><option value="batched">Batched + zstd</option><option value="legacy">Legacy LZ4</option></select></label>
               <label><span>Исходящий IP <em>необязательно</em></span><input id="localIp" placeholder="автоопределение" autocomplete="off"></label>
               <label class="wide"><span>Файл ключа шифрования <em>необязательно</em></span><input id="encryptionKey" placeholder="/etc/openflux-deploy/secret.key" autocomplete="off"><small>Одинаковый ключ должен быть установлен на сервере и клиенте.</small></label>
@@ -121,6 +133,6 @@
       <section id="view-logs" class="view"><article class="card logs-card"><div class="card-head"><div><h2>Журнал подключения</h2><p>Записи других пользователей недоступны</p></div><div class="header-actions"><select id="logConnection"></select><button id="copyLogs" class="secondary small">Копировать</button></div></div><pre id="logs">Выберите подключение…</pre></article></section>
     </main>
   </div>
-  <div id="toast" role="status"></div><script src="/app.js"></script>
+  <div id="toast" role="status"></div><script src="/app.js"></script><script src="/instructions.js"></script>
 </body>
 </html>

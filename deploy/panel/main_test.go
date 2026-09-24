@@ -291,6 +291,54 @@ func TestStateRequiresSessionAndHidesOtherConnections(t *testing.T) {
 	if panelResponse.Code != http.StatusForbidden {
 		t.Fatalf("panel update allowed for ordinary user: %d", panelResponse.Code)
 	}
+	for _, path := range []string{"/api/rollback-server", "/api/rollback-panel", "/api/check-updates"} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.AddCookie(&http.Cookie{Name: "of_session", Value: "valid"})
+		req.Header.Set("X-OpenFlux-Action", "1")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("ordinary user allowed %s: %d", path, response.Code)
+		}
+	}
+}
+
+func TestRollbackAvailabilityRequiresBinaryAndRevision(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin", "openflux")
+	panel := filepath.Join(dir, "bin", "openflux-panel")
+	version := filepath.Join(dir, "upstream-version")
+	panelVersion := filepath.Join(dir, "panel-revision")
+	if err := os.MkdirAll(filepath.Dir(bin), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{bin + ".rollback", panel + ".rollback", version + ".rollback", panelVersion + ".rollback"} {
+		if err := os.WriteFile(path, []byte("previous"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := &Manager{binaryPath: bin, versionPath: version, panelRevisionPath: panelVersion, rollbackCapable: true, processes: map[string]*processState{}}
+	state := m.state(User{Role: "admin"})
+	if state["server_rollback_available"] != true || state["panel_rollback_available"] != true {
+		t.Fatalf("backups not detected: %+v", state)
+	}
+	if err := os.Remove(version + ".rollback"); err != nil {
+		t.Fatal(err)
+	}
+	state = m.state(User{Role: "admin"})
+	if state["server_rollback_available"] != false || state["panel_rollback_available"] != true {
+		t.Fatalf("incomplete backup not detected: %+v", state)
+	}
+}
+
+func TestRollbackRequiresUpdatedInstaller(t *testing.T) {
+	m := &Manager{}
+	if err := m.rollbackServer(); err == nil {
+		t.Fatal("server rollback accepted with an old installer")
+	}
+	if err := m.rollbackPanel(); err == nil {
+		t.Fatal("panel rollback accepted with an old installer")
+	}
 }
 
 func TestLegacyConnectionMigration(t *testing.T) {

@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const panelVersion = "0.4.3"
+const panelVersion = "0.5.0"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -38,6 +38,7 @@ type loginAttempt struct {
 type server struct {
 	mgr           *Manager
 	users         *UserStore
+	instructions  *InstructionStore
 	nodeToken     string
 	secureCookies bool
 	mu            sync.Mutex
@@ -191,6 +192,8 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodGet && path == "/api/state":
 		writeJSON(w, http.StatusOK, s.mgr.state(u))
+	case strings.HasPrefix(path, "/api/instructions"):
+		s.instructionAPI(w, r, u)
 	case r.Method == http.MethodPost && path == "/api/logout":
 		if !requireAction(w, r) {
 			return
@@ -454,6 +457,15 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
+	case r.Method == http.MethodPost && path == "/api/rollback-server":
+		if !requireAdmin(w, u) || !requireAction(w, r) {
+			return
+		}
+		if err := s.mgr.rollbackServer(); err != nil {
+			apiError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
 	case r.Method == http.MethodPost && path == "/api/update-panel":
 		if !requireAdmin(w, u) || !requireAction(w, r) {
 			return
@@ -462,6 +474,21 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			apiError(w, http.StatusConflict, err.Error())
 			return
 		}
+		writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
+	case r.Method == http.MethodPost && path == "/api/rollback-panel":
+		if !requireAdmin(w, u) || !requireAction(w, r) {
+			return
+		}
+		if err := s.mgr.rollbackPanel(); err != nil {
+			apiError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
+	case r.Method == http.MethodPost && path == "/api/check-updates":
+		if !requireAdmin(w, u) || !requireAction(w, r) {
+			return
+		}
+		s.mgr.checkVersions(r.URL.Query().Get("force") == "1")
 		writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
 	default:
 		http.NotFound(w, r)
@@ -517,6 +544,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	instructions, err := loadInstructions(env("OPENFLUX_INSTRUCTIONS", "/etc/openflux-deploy/instructions.json"), env("OPENFLUX_INSTRUCTION_ASSETS", "/var/lib/openflux-deploy/instruction-assets"))
+	if err != nil {
+		log.Fatal(err)
+	}
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
 	go func() {
@@ -528,7 +559,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	srv := &server{mgr: mgr, users: users, nodeToken: os.Getenv("OPENFLUX_NODE_TOKEN"), secureCookies: os.Getenv("OPENFLUX_TLS_CERT") != "" && os.Getenv("OPENFLUX_TLS_KEY") != "", sessions: map[string]session{}, attempts: map[string]loginAttempt{}}
+	srv := &server{mgr: mgr, users: users, instructions: instructions, nodeToken: os.Getenv("OPENFLUX_NODE_TOKEN"), secureCookies: os.Getenv("OPENFLUX_TLS_CERT") != "" && os.Getenv("OPENFLUX_TLS_KEY") != "", sessions: map[string]session{}, attempts: map[string]loginAttempt{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusOK, mgr.health()) })
 	mux.HandleFunc("/api/login", srv.login)

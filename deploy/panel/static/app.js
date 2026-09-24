@@ -21,8 +21,9 @@ function navigate(view){
   activeView=view;
   $$(".nav").forEach(el=>el.classList.toggle("active",el.dataset.view===view));
   $$(".view").forEach(el=>el.classList.toggle("active",el.id===`view-${view}`));
-  $("#pageTitle").textContent={overview:"Обзор",connections:"Подключения",account:"Мой профиль",users:"Пользователи",nodes:"Ноды",logs:"Журнал"}[view];
+  $("#pageTitle").textContent={overview:"Обзор",instructions:"Инструкции",connections:"Подключения",account:"Мой профиль",users:"Пользователи",nodes:"Ноды",logs:"Журнал"}[view];
   if(view==="users")loadUsers();
+  if(view==="instructions")loadInstructions();
   if(view==="overview"&&state?.me.role==="admin")drawChart(state.traffic||[]);
 }
 $$('[data-view]').forEach(el=>el.onclick=()=>navigate(el.dataset.view));
@@ -86,12 +87,38 @@ function render(){
   $("#connectionCount").textContent=connections.length;$("#connectionTotal").textContent=connections.length;$("#runningTotal").textContent=`${running} работают`;
   const pill=$("#statusPill");pill.className=`status ${running?'online':'offline'}`;pill.innerHTML=`<i></i>${running} / ${connections.length} работают`;
   $("#version").textContent=(state.upstream_version||"unknown").slice(0,12);$("#panelVersion").textContent=`панель ${state.panel_version} · ${(state.panel_revision||"unknown").slice(0,8)}`;
-  if(admin){const point=(state.traffic||[]).at(-1)||{};$("#rxNow").textContent=`${bytes(point.rx)}/с`;$("#txNow").textContent=`${bytes(point.tx)}/с`;$("#autoUpdate").checked=!!state.auto_update;$("#updateBtn").disabled=!!state.updating||!!state.updating_panel;$("#updatePanelBtn").disabled=!!state.updating||!!state.updating_panel;$("#panelUpdateStatus").textContent=state.panel_update_error|| (state.updating_panel?"Панель обновляется; ход работы показан ниже…":state.update_error||"");const updateLog=$("#panelUpdateLog");updateLog.textContent=state.panel_update_log||"";updateLog.classList.toggle("hidden",!state.panel_update_log);drawChart(state.traffic||[]);renderNodes(state.nodes||[])}
+  if(admin){
+    const point=(state.traffic||[]).at(-1)||{},busy=!!state.updating||!!state.updating_panel;
+    $("#rxNow").textContent=`${bytes(point.rx)}/с`;$("#txNow").textContent=`${bytes(point.tx)}/с`;$("#autoUpdate").checked=!!state.auto_update;
+    $("#updateBtn").disabled=busy;$("#updatePanelBtn").disabled=busy;
+    $("#rollbackServerBtn").disabled=busy||!state.server_rollback_available;
+    $("#rollbackPanelBtn").disabled=busy||!state.panel_rollback_available;
+    $("#rollbackHint").classList.toggle("hidden",!!state.rollback_capable);
+    $("#checkUpdatesBtn").disabled=!!state.checking_versions;
+    $("#checkUpdatesBtn").textContent=state.checking_versions?"Проверяем…":"Проверить версии";
+    const serverNew=!!state.latest_upstream&&state.latest_upstream!==state.upstream_version;
+    const panelNew=!!state.latest_panel&&state.latest_panel!==state.panel_revision;
+    $("#serverVersionStatus").textContent=state.latest_upstream?`Последняя ревизия: ${state.latest_upstream.slice(0,8)}${serverNew?" · доступно обновление":" · актуально"}`:"";
+    $("#panelVersionStatus").textContent=state.latest_panel?`Последняя ревизия: ${state.latest_panel.slice(0,8)}${panelNew?" · доступно обновление":" · актуально"}`:"";
+    $("#updateNotice").classList.toggle("hidden",!serverNew&&!panelNew);
+    $("#updateNoticeText").textContent=serverNew&&panelNew?"Для сервера и панели доступны новые версии.":serverNew?"Доступна новая версия сервера.":"Доступна новая версия панели.";
+    $("#offerServerUpdate").classList.toggle("hidden",!serverNew);$("#offerPanelUpdate").classList.toggle("hidden",!panelNew);
+    $("#offerServerUpdate").disabled=busy;$("#offerPanelUpdate").disabled=busy;
+    $("#serverUpdateStatus").textContent=state.update_error||(state.updating?(state.server_action==="rollback"?"Откатываем серверную часть…":"Обновляем серверную часть…"):(state.server_action==="rollback"?"Откат завершён; автообновление сервера выключено.":state.version_check_error||""));
+    $("#panelUpdateStatus").textContent=state.panel_update_error||(state.updating_panel?(state.panel_action==="rollback"?"Откатываем панель; она будет перезапущена…":"Панель обновляется; ход работы показан ниже…"):"");
+    const updateLog=$("#panelUpdateLog");updateLog.textContent=state.panel_update_log||"";updateLog.classList.toggle("hidden",!state.panel_update_log);
+    drawChart(state.traffic||[]);renderNodes(state.nodes||[])
+  }
+  else $("#updateNotice").classList.add("hidden");
   renderConnections();if(activeView==="users")renderUsers();
 }
 async function refresh(){try{state=await api("/api/state");render();}catch(e){if(e.status===401)showLogin();else if(state)toast(`Нет связи с панелью: ${e.message}`,true);else showLogin();}}
 
-function transportChanged(){const kind=$("#transport").value,cups=kind==="cupsonline",boards=kind==="boards";$("#urlField").classList.toggle("hidden",cups);$("#docUrl").required=!cups&&$("#enabled").checked;$("#urlLabel").textContent=boards?"Публичная ссылка на доску":"Публичная ссылка на документ";$("#docUrl").placeholder=boards?"https://boards.yandex.ru/guest/?hash=…":"https://…";$("#urlHint").textContent=boards?"Нужна гостевая ссылка с параметром hash. Клиент на телефоне тоже должен поддерживать boards.":"Доступ по ссылке должен быть разрешён.";}
+function transportChanged(){const kind=$("#transport").value,cups=kind==="cupsonline",boards=kind==="boards";$("#urlField").classList.toggle("hidden",cups);$("#docUrl").required=!cups&&$("#enabled").checked;$("#urlLabel").textContent=boards?"Публичная ссылка на доску":"Публичная ссылка на документ";$("#docUrl").placeholder=boards?"https://boards.yandex.ru/guest/?hash=…":"https://…";$("#urlHint").textContent=boards?"Нужна гостевая ссылка с параметром hash. Клиент на телефоне тоже должен поддерживать boards.":"Доступ по ссылке должен быть разрешён.";
+  const guide={yandex:{url:"https://docs.360.yandex.ru/",label:"Открыть Yandex Docs ↗",tip:'<strong>Снять</strong> галочку «Перейти на новый редактор». Ссылку взять через «Поделиться» в документе.'},vyandex:{url:"https://docs.360.yandex.ru/",label:"Открыть Yandex Volga ↗",tip:'<strong>Оставить</strong> галочку «Перейти на новый редактор». Ссылку взять через «Поделиться» в документе.'},mailru:{url:"https://doc.mail.ru/",label:"Открыть Mail.ru Docs ↗",tip:'Ссылку взять через «Поделиться» в документе.'},boards:{url:"https://boards.yandex.ru/",label:"Открыть Yandex Board ↗",tip:'Скопируйте гостевую ссылку на доску с параметром hash.'}}[kind];
+  $("#transportGuide").classList.toggle("hidden",!guide);
+  if(guide){$("#transportServiceLink").href=guide.url;$("#transportServiceLink").textContent=guide.label;$("#transportTip").innerHTML=guide.tip}
+}
 $("#transport").onchange=transportChanged;$("#enabled").onchange=transportChanged;
 function openConnection(c){
   editing=c?.id||null;$("#editorTitle").textContent=c?`Настроить: ${c.name}`:"Новое подключение";
@@ -128,7 +155,7 @@ document.addEventListener("click",async event=>{
 });
 $("#logConnection").onchange=event=>{selectedLog=event.target.value;renderConnections()};
 $("#copyLogs").onclick=async()=>{try{await navigator.clipboard.writeText($("#logs").textContent);toast("Журнал скопирован")}catch(e){toast(e.message,true)}};
-$("#loginForm").onsubmit=async event=>{event.preventDefault();try{await api("/api/login",{method:"POST",...json({username:$("#loginName").value.trim(),password:$("#loginPassword").value})});$("#loginPassword").value="";$("#loginError").textContent="";await refresh();if(state?.me.role==="admin")await loadUsers();}catch(e){$("#loginError").textContent=e.message}};
+$("#loginForm").onsubmit=async event=>{event.preventDefault();try{await api("/api/login",{method:"POST",...json({username:$("#loginName").value.trim(),password:$("#loginPassword").value})});$("#loginPassword").value="";$("#loginError").textContent="";await refresh();if(state?.me.role==="admin"){await loadUsers();checkUpdates()}}catch(e){$("#loginError").textContent=e.message}};
 $("#logoutBtn").onclick=async()=>{try{await api("/api/logout",{method:"POST"})}catch(_){}showLogin()};
 $("#userForm").onsubmit=async event=>{event.preventDefault();try{await api("/api/users",{method:"POST",...json({username:$("#userName").value.trim(),password:$("#userPassword").value,role:$("#userRole").value})});event.target.reset();toast("Пользователь создан");await loadUsers()}catch(e){toast(e.message,true)}};
 $("#cancelUserEdit").onclick=()=>$("#editUserForm").classList.add("hidden");
@@ -146,9 +173,14 @@ $("#usernameForm").addEventListener("input",()=>$("#usernameForm").dataset.dirty
 $("#usernameForm").onsubmit=async event=>{event.preventDefault();const username=$("#accountUsername").value.trim();try{await api(`/api/users/${state.me.id}/username`,{method:"PUT",...json({username,current_password:$("#usernameCurrentPassword").value})});event.target.reset();delete event.target.dataset.dirty;showLogin();$("#loginName").value=username;toast("Логин изменён. Войдите снова.")}catch(e){toast(e.message,true)}};
 $("#passwordForm").onsubmit=async event=>{event.preventDefault();const password=$("#passwordNew").value;if(password!==$("#passwordConfirm").value){toast("Новые пароли не совпадают",true);return}try{await api(`/api/users/${state.me.id}/password`,{method:"PUT",...json({password,current_password:$("#passwordCurrent").value})});event.target.reset();showLogin();toast("Пароль изменён. Войдите снова.")}catch(e){toast(e.message,true)}};
 $("#autoUpdate").onchange=async event=>{try{await api("/api/settings",{method:"PUT",...json({auto_update:event.target.checked})});toast("Настройка обновления сохранена")}catch(e){event.target.checked=!event.target.checked;toast(e.message,true)}};
-$("#updateBtn").onclick=async()=>{try{await api("/api/update",{method:"POST"});toast("Обновление запущено")}catch(e){toast(e.message,true)}};
+$("#updateBtn").onclick=async()=>{try{await api("/api/update",{method:"POST"});toast("Обновление запущено");await refresh()}catch(e){toast(e.message,true)}};
 $("#updatePanelBtn").onclick=async()=>{try{await api("/api/update-panel",{method:"POST"});toast("Обновление панели запущено. После перезапуска войдите снова.");await refresh()}catch(e){toast(e.message,true)}};
+$("#rollbackServerBtn").onclick=async()=>{if(!confirm("Откатить серверную часть на предыдущую версию? Автообновление будет выключено."))return;try{await api("/api/rollback-server",{method:"POST"});toast("Откат сервера запущен");await refresh()}catch(e){toast(e.message,true)}};
+$("#rollbackPanelBtn").onclick=async()=>{if(!confirm("Откатить панель на предыдущую версию? После перезапуска потребуется повторный вход."))return;try{await api("/api/rollback-panel",{method:"POST"});toast("Откат панели запущен");await refresh()}catch(e){toast(e.message,true)}};
+async function checkUpdates(force=false){if(state?.me.role!=="admin")return;try{await api(`/api/check-updates${force?"?force=1":""}`,{method:"POST"});await refresh()}catch(e){toast(`Проверка версий: ${e.message}`,true)}}
+$("#checkUpdatesBtn").onclick=()=>checkUpdates(true);
+$("#offerServerUpdate").onclick=()=>$("#updateBtn").click();$("#offerPanelUpdate").onclick=()=>$("#updatePanelBtn").click();
 $("#showAddNode").onclick=()=>$("#nodeForm").classList.remove("hidden");$("#cancelNode").onclick=()=>$("#nodeForm").classList.add("hidden");
 $("#nodeForm").onsubmit=async event=>{event.preventDefault();try{await api("/api/nodes",{method:"POST",...json({name:$("#nodeName").value.trim(),base_url:$("#nodeUrl").value.trim(),token:$("#nodeToken").value,tls_sha256:$("#nodeFingerprint").value.trim()})});event.target.reset();event.target.classList.add("hidden");toast("Нода подключена");await refresh()}catch(e){toast(e.message,true)}};
 addEventListener("resize",()=>state?.me.role==="admin"&&drawChart(state.traffic||[]));
-refresh().then(()=>{if(state?.me.role==="admin")loadUsers()});setInterval(()=>{if(state)refresh()},5000);
+refresh().then(()=>{if(state?.me.role==="admin"){loadUsers();checkUpdates()}});setInterval(()=>{if(state)refresh()},5000);

@@ -17,6 +17,46 @@ export GOMODCACHE="${GOMODCACHE:-$STATE_DIR/go-mod}"
 export GOPATH="${GOPATH:-$STATE_DIR/go-path}"
 install -d -m 755 "$STATE_DIR/bin"
 command -v timeout >/dev/null || { say 'timeout command is required'; exit 1; }
+restart_panel(){
+  # Only terminate the panel process that launched this updater. The service
+  # manager or Docker restart policy starts the selected binary again.
+  local pid executable
+  pid="${OPENFLUX_PANEL_PID:-}"
+  if [[ "$pid" =~ ^[0-9]+$ ]] && [ "$pid" -ge 1 ]; then
+    executable="$(readlink "/proc/$pid/exe" 2>/dev/null || true)"
+    case "$executable" in
+      */openflux-panel|*/openflux-panel\ \(deleted\))
+        say "restarting panel pid $pid"
+        kill -TERM "$pid"
+        if [ "$pid" -eq 1 ] && [ -f /.dockerenv ]; then
+          sleep 2
+          if kill -0 1 2>/dev/null; then
+            say 'PID 1 ignored SIGTERM; stopping container to trigger Docker restart'
+            kill -KILL 1
+          fi
+        fi
+        ;;
+      *) say 'panel process changed; restart the service/container manually'; exit 1;;
+    esac
+  else
+    say 'restart the panel service/container to apply the selected binary'
+  fi
+}
+if [ "${1:-}" = "--rollback" ]; then
+  [ -s "$PANEL_BIN.rollback" ] && [ -s "$REVISION_FILE.rollback" ] && [ -s "$PANEL_BIN" ] && [ -s "$REVISION_FILE" ] || { say 'no previous panel version to restore'; exit 1; }
+  "$PANEL_BIN.rollback" --version | grep -q '^OpenFlux panel ' || { say 'previous panel binary failed smoke test'; exit 1; }
+  cp -p "$PANEL_BIN" "$PANEL_BIN.swap"
+  cp -p "$PANEL_BIN.rollback" "$PANEL_BIN.new"
+  cp -p "$REVISION_FILE" "$REVISION_FILE.swap"
+  cp -p "$REVISION_FILE.rollback" "$REVISION_FILE.new"
+  mv "$PANEL_BIN.new" "$PANEL_BIN"
+  mv "$PANEL_BIN.swap" "$PANEL_BIN.rollback"
+  mv "$REVISION_FILE.new" "$REVISION_FILE"
+  mv "$REVISION_FILE.swap" "$REVISION_FILE.rollback"
+  say "restored $(cat "$REVISION_FILE")"
+  restart_panel
+  exit 0
+fi
 
 say 'checking the latest panel revision'
 LATEST="$(timeout 2m git ls-remote "https://github.com/$REPO.git" "refs/heads/$REF" | awk '{print $1}')"
@@ -38,30 +78,8 @@ if [ -f "$PANEL_BIN" ]; then cp -p "$PANEL_BIN" "$PANEL_BIN.rollback"; fi
 if [ -f "$REVISION_FILE" ]; then cp -p "$REVISION_FILE" "$REVISION_FILE.rollback"; fi
 install -m 755 "$TMP/openflux-panel" "$PANEL_BIN.new"
 mv "$PANEL_BIN.new" "$PANEL_BIN"
-printf '%s\n' "$CHECKED_OUT" >"$REVISION_FILE"
+printf '%s\n' "$CHECKED_OUT" >"$REVISION_FILE.new"
+mv "$REVISION_FILE.new" "$REVISION_FILE"
 say "installed $CHECKED_OUT; previous binary: $PANEL_BIN.rollback"
 
-# Called by the panel API: terminate only the panel process that launched this
-# updater. systemd Restart=always and Docker restart: unless-stopped bring it
-# back using the newly installed binary. A manual script run does not kill its
-# invoking shell.
-PID="${OPENFLUX_PANEL_PID:-}"
-if [[ "$PID" =~ ^[0-9]+$ ]] && [ "$PID" -ge 1 ]; then
-  EXECUTABLE="$(readlink "/proc/$PID/exe" 2>/dev/null || true)"
-  case "$EXECUTABLE" in
-    */openflux-panel|*/openflux-panel\ \(deleted\))
-      say "restarting panel pid $PID"
-      kill -TERM "$PID"
-      if [ "$PID" -eq 1 ] && [ -f /.dockerenv ]; then
-        sleep 2
-        if kill -0 1 2>/dev/null; then
-          say 'PID 1 ignored SIGTERM; stopping container to trigger Docker restart'
-          kill -KILL 1
-        fi
-      fi
-      ;;
-    *) say 'panel process changed; restart the service/container manually'; exit 1;;
-  esac
-else
-  say 'restart the panel service/container to apply the new binary'
-fi
+restart_panel
