@@ -1,9 +1,12 @@
 # syntax=docker/dockerfile:1
 FROM golang:1.26-alpine AS openflux-build
 ARG OPENFLUX_UPSTREAM_REPO=https://github.com/p1neappleXpress/OpenFlux.git
+ARG OPENFLUX_UPSTREAM_REVISION=main
 RUN apk add --no-cache git
 WORKDIR /src
-RUN git clone --depth 1 "$OPENFLUX_UPSTREAM_REPO" .
+RUN git init -q . && git remote add origin "$OPENFLUX_UPSTREAM_REPO" && \
+    git fetch --quiet --depth 1 origin "$OPENFLUX_UPSTREAM_REVISION" && \
+    git checkout --quiet --detach FETCH_HEAD
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/openflux . && git rev-parse HEAD >/out/upstream-version
 

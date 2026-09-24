@@ -52,7 +52,11 @@ jobs:
           cp deploy/Dockerfile deploy/docker-compose.yml deploy/entrypoint.sh deploy/update.sh deploy/panel-update.sh /tmp/openflux-docker/
       - name: Build image
         working-directory: /tmp/openflux-docker
-        run: docker build -t openflux-deploy:ci .
+        run: |
+          upstream_sha="$(git ls-remote https://github.com/p1neappleXpress/OpenFlux.git refs/heads/main | awk '{print $1}')"
+          test -n "$upstream_sha"
+          docker build --build-arg OPENFLUX_UPSTREAM_REVISION="$upstream_sha" -t openflux-deploy:ci .
+          docker run --rm --entrypoint cat openflux-deploy:ci /usr/local/lib/openflux-deploy/upstream-version.seed | grep -Fx "$upstream_sha"
       - name: Validate Compose port mapping
         working-directory: /tmp/openflux-docker
         run: OPENFLUX_ADMIN_PASSWORD=test OPENFLUX_NODE_TOKEN=test docker compose config --quiet

@@ -266,6 +266,9 @@ EOF
   fi
   printf 'docker\n' >"$CONFIG_DIR/install-mode"
   export OPENFLUX_DEPLOY_REVISION="${DEPLOY_REVISION:-bundled}"
+  export OPENFLUX_UPSTREAM_REVISION
+  OPENFLUX_UPSTREAM_REVISION="$(git ls-remote "$UPSTREAM_REPO" refs/heads/main | awk '{print $1}')"
+  [ -n "$OPENFLUX_UPSTREAM_REVISION" ] || fail "не удалось получить версию серверного OpenFlux"
   (cd "$PREFIX" && docker compose build)
   touch "$STATE_DIR/panel-seed-next-start"
   touch "$STATE_DIR/server-seed-next-start"

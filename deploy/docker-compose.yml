@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
       args:
         OPENFLUX_UPSTREAM_REPO: ${OPENFLUX_UPSTREAM_REPO:-https://github.com/p1neappleXpress/OpenFlux.git}
+        OPENFLUX_UPSTREAM_REVISION: ${OPENFLUX_UPSTREAM_REVISION:-main}
         OPENFLUX_DEPLOY_REVISION: ${OPENFLUX_DEPLOY_REVISION:-bundled}
     image: openflux-deploy:local
     container_name: openflux-deploy
