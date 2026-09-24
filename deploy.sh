@@ -224,9 +224,9 @@ EOF
 Description=Daily OpenFlux upstream update check
 
 [Timer]
-OnBootSec=20min
-OnUnitActiveSec=1d
-RandomizedDelaySec=2h
+OnBootSec=2min
+OnUnitActiveSec=6h
+RandomizedDelaySec=5min
 Persistent=true
 
 [Install]
