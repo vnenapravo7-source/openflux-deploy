@@ -48,6 +48,11 @@ case "$PORT" in *[!0-9]*|'') fail "порт должен быть числом";
 [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] || fail "порт вне диапазона"
 
 if [ "$INSTALL_MODE" = auto ]; then
+  if [ -f "$CONFIG_DIR/install-mode" ]; then
+    INSTALL_MODE="$(tr -d '[:space:]' <"$CONFIG_DIR/install-mode")"
+  fi
+fi
+if [ "$INSTALL_MODE" = auto ]; then
   if have docker && docker compose version >/dev/null 2>&1; then INSTALL_MODE=docker; else INSTALL_MODE=systemd; fi
 fi
 case "$INSTALL_MODE" in systemd|docker) ;; *) fail "--mode: systemd или docker";; esac
