@@ -99,7 +99,8 @@ type Manager struct {
 	updatePath         string
 	panelUpdatePath    string
 	panelRevisionPath  string
-	panelUpdateLogPath string
+	panelUpdateLogPath  string
+	serverUpdateLogPath string
 	rollbackCapable    bool
 	connections        []Connection
 	processes          map[string]*processState
@@ -159,7 +160,7 @@ func validateConnection(c Connection) error {
 }
 
 func NewManager(legacyPath, connectionsPath, nodesPath, binaryPath, versionPath, updatePath, adminID string) (*Manager, error) {
-	m := &Manager{legacyPath: legacyPath, connectionsPath: connectionsPath, nodesPath: nodesPath, binaryPath: binaryPath, versionPath: versionPath, updatePath: updatePath, panelUpdatePath: env("OPENFLUX_PANEL_UPDATE_SCRIPT", "/usr/local/lib/openflux-deploy/panel-update.sh"), panelRevisionPath: env("OPENFLUX_PANEL_REVISION_FILE", "/var/lib/openflux-deploy/panel-revision"), panelUpdateLogPath: env("OPENFLUX_PANEL_UPDATE_LOG", "/var/lib/openflux-deploy/panel-update.log"), rollbackCapable: os.Getenv("OPENFLUX_ROLLBACK_CAPABLE") == "1", processes: map[string]*processState{}, nodes: []Node{}, connections: []Connection{}, traffic: []TrafficPoint{}, autoUpdate: true}
+	m := &Manager{legacyPath: legacyPath, connectionsPath: connectionsPath, nodesPath: nodesPath, binaryPath: binaryPath, versionPath: versionPath, updatePath: updatePath, panelUpdatePath: env("OPENFLUX_PANEL_UPDATE_SCRIPT", "/usr/local/lib/openflux-deploy/panel-update.sh"), panelRevisionPath: env("OPENFLUX_PANEL_REVISION_FILE", "/var/lib/openflux-deploy/panel-revision"), panelUpdateLogPath: env("OPENFLUX_PANEL_UPDATE_LOG", "/var/lib/openflux-deploy/panel-update.log"), serverUpdateLogPath: env("OPENFLUX_SERVER_UPDATE_LOG", "/var/lib/openflux-deploy/server-update.log"), rollbackCapable: os.Getenv("OPENFLUX_ROLLBACK_CAPABLE") == "1", processes: map[string]*processState{}, nodes: []Node{}, connections: []Connection{}, traffic: []TrafficPoint{}, autoUpdate: true}
 	if raw, err := os.ReadFile(legacyPath); err == nil {
 		var old Config
 		if err := json.Unmarshal(raw, &old); err != nil {
@@ -220,7 +221,7 @@ func NewManager(legacyPath, connectionsPath, nodesPath, binaryPath, versionPath,
 }
 
 func (m *Manager) autoUpdateLoop(interval time.Duration) {
-	delay := 20 * time.Minute
+	delay := 2 * time.Minute
 	if d, err := time.ParseDuration(os.Getenv("OPENFLUX_AUTO_UPDATE_DELAY")); err == nil && d >= 0 {
 		delay = d
 	}
@@ -622,6 +623,7 @@ func (m *Manager) state(user User) map[string]any {
 		state["server_rollback_available"] = m.rollbackCapable && regularFile(m.binaryPath+".rollback") && regularFile(m.versionPath+".rollback") && previousServer != m.version()
 		state["panel_rollback_available"] = m.rollbackCapable && regularFile(filepath.Join(filepath.Dir(m.panelRevisionPath), "bin/openflux-panel.rollback")) && regularFile(m.panelRevisionPath+".rollback") && previousPanel != m.panelRevision()
 		state["panel_update_log"] = tailFile(m.panelUpdateLogPath, 8192)
+		state["server_update_log"] = tailFile(m.serverUpdateLogPath, 8192)
 		state["nodes"] = m.nodeViews()
 	}
 	return state
@@ -649,12 +651,27 @@ func (m *Manager) update() error {
 	m.updateError = ""
 	m.serverAction = "update"
 	m.mu.Unlock()
+	if err := os.MkdirAll(filepath.Dir(m.serverUpdateLogPath), 0700); err != nil {
+		m.mu.Lock()
+		m.updating, m.updateError = false, err.Error()
+		m.mu.Unlock()
+		return err
+	}
+	logFile, err := os.OpenFile(m.serverUpdateLogPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	if err != nil {
+		m.mu.Lock()
+		m.updating, m.updateError = false, err.Error()
+		m.mu.Unlock()
+		return err
+	}
 	go func() {
 		cmd := exec.Command(m.updatePath, "--force")
-		out, err := cmd.CombinedOutput()
+		cmd.Stdout, cmd.Stderr = logFile, logFile
+		err := cmd.Run()
+		logFile.Close()
 		m.mu.Lock()
 		if err != nil {
-			m.updateError = fmt.Sprintf("%v: %s", err, strings.TrimSpace(string(out)))
+			m.updateError = fmt.Sprintf("%v: %s", err, strings.TrimSpace(tailFile(m.serverUpdateLogPath, 4096)))
 		}
 		m.updating = false
 		m.mu.Unlock()
@@ -912,4 +929,3 @@ func (m *Manager) removeUserConnections(ownerID string) error {
 	m.connections = next
 	return nil
 }
-
