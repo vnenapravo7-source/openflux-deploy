@@ -1,101 +1,95 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="dark">
-  <title>OpenFlux Control</title>
-  <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/responsive.css">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark">
+  <title>OpenFlux Control</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/responsive.css">
 </head>
 <body>
-  <div class="shell">
+  <section id="loginScreen" class="login-screen hidden">
+    <form id="loginForm" class="card login-card">
+      <div class="brand"><span class="mark">OF</span><div><strong>OpenFlux</strong><small>Control plane</small></div></div>
+      <h1>Вход в панель</h1><p>У каждого пользователя свой список подключений.</p>
+      <label><span>Логин</span><input id="loginName" required autocomplete="username"></label>
+      <label><span>Пароль</span><input id="loginPassword" required type="password" autocomplete="current-password"></label>
+      <button class="primary" type="submit">Войти</button><small id="loginError" role="alert"></small>
+    </form>
+  </section>
+  <div id="appShell" class="shell hidden">
     <aside>
       <div class="brand"><span class="mark">OF</span><div><strong>OpenFlux</strong><small>Control plane</small></div></div>
       <nav>
         <button class="nav active" data-view="overview">Обзор</button>
-        <button class="nav" data-view="settings">Подключение</button>
-        <button class="nav" data-view="nodes">Ноды <span id="nodeCount" class="badge">0</span></button>
+        <button class="nav" data-view="connections">Подключения <span id="connectionCount" class="badge">0</span></button>
+        <button class="nav admin-only" data-view="users">Пользователи</button>
+        <button class="nav admin-only" data-view="nodes">Ноды <span id="nodeCount" class="badge">0</span></button>
         <button class="nav" data-view="logs">Журнал</button>
       </nav>
-      <div class="clients">
-        <small>Клиенты</small>
+      <div class="clients"><small>Мобильные клиенты</small>
         <a href="https://testflight.apple.com/join/BwnAcdus" target="_blank" rel="noreferrer">iOS · TestFlight <span>↗</span></a>
         <a href="https://github.com/damnurmum/OpenFlux-Android/releases/latest" target="_blank" rel="noreferrer">Android · APK <span>↗</span></a>
+        <button id="logoutBtn" class="secondary small">Выйти</button>
       </div>
     </aside>
-
     <main>
-      <header>
-        <div><p class="eyebrow">УПРАВЛЕНИЕ СЕРВЕРОМ</p><h1 id="pageTitle">Обзор</h1></div>
-        <div class="header-actions"><span id="statusPill" class="status waiting"><i></i>Загрузка</span><button id="restartTop" class="icon-btn" title="Перезапустить">↻</button></div>
+      <header><div><p class="eyebrow" id="accountLabel">OPENFLUX</p><h1 id="pageTitle">Обзор</h1></div>
+        <div class="header-actions"><span id="statusPill" class="status waiting"><i></i>Загрузка</span><button id="newConnectionTop" class="primary small">+ Подключение</button></div>
       </header>
-
       <section id="view-overview" class="view active">
         <div class="stats">
-          <article class="stat"><span>Состояние</span><strong id="runText">—</strong><small id="uptime">—</small></article>
-          <article class="stat"><span>Входящий трафик</span><strong id="rxNow">—</strong><small>в секунду · весь сервер</small></article>
-          <article class="stat"><span>Исходящий трафик</span><strong id="txNow">—</strong><small>в секунду · весь сервер</small></article>
-          <article class="stat"><span>Версия upstream</span><strong id="version">—</strong><small id="panelVersion">—</small></article>
+          <article class="stat"><span>Мои подключения</span><strong id="connectionTotal">0</strong><small id="runningTotal">0 работают</small></article>
+          <article class="stat admin-only"><span>Входящий трафик</span><strong id="rxNow">—</strong><small>весь сервер</small></article>
+          <article class="stat admin-only"><span>Исходящий трафик</span><strong id="txNow">—</strong><small>весь сервер</small></article>
+          <article class="stat"><span>Версия OpenFlux</span><strong id="version">—</strong><small id="panelVersion">—</small></article>
         </div>
-
-        <article class="card chart-card">
-          <div class="card-head"><div><h2>Сетевой трафик</h2><p>Последние 10 минут, без loopback</p></div><div class="legend"><span><i class="rx"></i>RX</span><span><i class="tx"></i>TX</span></div></div>
-          <canvas id="trafficChart" height="250"></canvas>
-        </article>
-
-        <div class="two-col">
-          <article class="card current"><div class="card-head"><div><h2>Текущее подключение</h2><p>Конфигурация exit-ноды</p></div><button class="text-btn" data-goto="settings">Изменить</button></div>
-            <dl><div><dt>Транспорт</dt><dd id="currentTransport">—</dd></div><div><dt>Режим</dt><dd id="currentMode">—</dd></div><div><dt>Кодек</dt><dd id="currentCodec">—</dd></div><div><dt>PID</dt><dd id="currentPid">—</dd></div></dl>
-          </article>
-          <article class="card actions"><div class="card-head"><div><h2>Обслуживание</h2><p>Без потери сохранённых настроек</p></div></div>
-            <button id="restartBtn" class="action"><span>↻</span><div><b>Перезапустить OpenFlux</b><small>Короткий разрыв соединения</small></div></button>
-            <button id="updateBtn" class="action"><span>⇣</span><div><b>Проверить обновление</b><small>Upstream main, с откатом при ошибке</small></div></button>
-          </article>
-        </div>
+        <article class="card chart-card admin-only"><div class="card-head"><div><h2>Сетевой трафик сервера</h2><p>Последние 10 минут, все интерфейсы кроме loopback</p></div><div class="legend"><span><i class="rx"></i>RX</span><span><i class="tx"></i>TX</span></div></div><canvas id="trafficChart" height="250"></canvas></article>
+        <article class="card"><div class="card-head"><div><h2>Подключения</h2><p>Каждое запускается как отдельный процесс OpenFlux</p></div><button class="text-btn" data-goto="connections">Открыть все</button></div><div id="overviewConnections" class="connection-list"></div></article>
+        <article class="card admin-only maintenance"><div class="card-head"><div><h2>Обслуживание</h2><p>Обновление серверного бинарника из основного репозитория</p></div><button id="updateBtn" class="secondary small">Проверить обновление</button></div><label class="check"><input id="autoUpdate" type="checkbox"><span>Автоматически обновлять из p1neappleXpress/OpenFlux</span></label></article>
       </section>
-
-      <section id="view-settings" class="view">
-        <article class="card form-card">
-          <div class="card-head"><div><h2>Подключение OpenFlux</h2><p>Ссылка должна совпадать с настройкой в мобильном клиенте</p></div></div>
-          <form id="configForm">
-            <label class="switch-row"><span><b>Запустить exit-ноду</b><small>Панель продолжит работать, если выключить сервис</small></span><input id="enabled" type="checkbox"><i></i></label>
+      <section id="view-connections" class="view">
+        <article class="card"><div class="card-head"><div><h2>Подключения</h2><p>Можно создать несколько подключений для одного пользователя</p></div><button id="showConnectionForm" class="primary small">+ Создать</button></div><div id="connectionsList" class="connection-list"></div></article>
+        <article id="connectionEditor" class="card form-card hidden"><div class="card-head"><div><h2 id="editorTitle">Новое подключение</h2><p>Транспорт и кодек должны совпадать с мобильным клиентом</p></div><button id="cancelConnection" class="secondary small" type="button">Закрыть</button></div>
+          <form id="connectionForm">
+            <label class="switch-row"><span><b>Запустить exit-ноду</b><small>При выключении настройки сохранятся</small></span><input id="enabled" type="checkbox"><i></i></label>
             <div class="form-grid">
+              <label><span>Название</span><input id="connectionName" required maxlength="80" placeholder="Личное подключение"></label>
+              <label id="ownerField" class="admin-only"><span>Владелец</span><select id="connectionOwner"></select></label>
               <label><span>Сервис транспорта</span><select id="transport"><option value="yandex">Yandex Docs</option><option value="vyandex">Yandex Volga</option><option value="mailru">Mail.ru Docs</option><option value="cupsonline">Cups.online</option></select></label>
-              <label><span>Режим выхода</span><select id="mode"><option value="l3">L3 · быстрее, Linux root</option><option value="l4">L4 · совместимый</option></select></label>
-              <label class="wide" id="urlField"><span id="urlLabel">Публичная ссылка на документ</span><input id="docUrl" type="url" placeholder="https://…" autocomplete="off"><small id="urlHint">Доступ по ссылке должен быть разрешён.</small></label>
+              <label><span>Режим выхода</span><select id="mode"><option value="l4">L4 · совместимый</option><option value="l3">L3 · Linux root</option></select></label>
+              <label class="wide" id="urlField"><span>Публичная ссылка на документ</span><input id="docUrl" type="url" placeholder="https://…" autocomplete="off"><small>Доступ по ссылке должен быть разрешён.</small></label>
               <label><span>Кодек</span><select id="codec"><option value="batched">Batched + zstd</option><option value="legacy">Legacy LZ4</option></select></label>
               <label><span>Исходящий IP <em>необязательно</em></span><input id="localIp" placeholder="автоопределение" autocomplete="off"></label>
-              <label class="wide"><span>Файл ключа шифрования <em>необязательно</em></span><input id="encryptionKey" placeholder="/etc/openflux-deploy/secret.key" autocomplete="off"><small>Путь на сервере. Один ключ должен быть установлен на обеих сторонах.</small></label>
+              <label class="wide"><span>Файл ключа шифрования <em>необязательно</em></span><input id="encryptionKey" placeholder="/etc/openflux-deploy/secret.key" autocomplete="off"><small>Одинаковый ключ должен быть установлен на сервере и клиенте.</small></label>
             </div>
-            <label class="check"><input id="autoUpdate" type="checkbox"><span>Автоматически обновлять сервер из <b>p1neappleXpress/OpenFlux</b></span></label>
             <label class="check"><input id="debug" type="checkbox"><span>Подробный журнал отладки</span></label>
             <div class="form-actions"><span id="saveMessage"></span><button type="submit" class="primary">Сохранить и применить</button></div>
           </form>
         </article>
       </section>
-
-      <section id="view-nodes" class="view">
-        <article class="card">
-          <div class="card-head"><div><h2>Подключённые серверы</h2><p>Статус и управление удалёнными OpenFlux-нодами</p></div><button id="showAddNode" class="primary small">+ Добавить ноду</button></div>
+      <section id="view-users" class="view admin-only">
+        <article class="card"><div class="card-head"><div><h2>Пользователи</h2><p>Обычный пользователь видит только свои подключения</p></div></div>
+          <div id="usersList" class="connection-list"></div>
+          <form id="userForm" class="node-form">
+            <label><span>Логин</span><input id="userName" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]+" autocomplete="off"></label>
+            <label><span>Пароль · от 12 символов</span><input id="userPassword" type="password" minlength="12" required autocomplete="new-password"></label>
+            <label><span>Роль</span><select id="userRole"><option value="user">Пользователь</option><option value="admin">Администратор</option></select></label>
+            <div class="node-form-actions"><button class="primary" type="submit">Добавить пользователя</button></div>
+          </form>
+        </article>
+      </section>
+      <section id="view-nodes" class="view admin-only">
+        <article class="card"><div class="card-head"><div><h2>Подключённые серверы</h2><p>Статус и управление удалёнными OpenFlux-нодами</p></div><button id="showAddNode" class="primary small">+ Добавить ноду</button></div>
           <form id="nodeForm" class="node-form hidden">
             <label><span>Название</span><input id="nodeName" required placeholder="Амстердам 1"></label>
             <label><span>HTTPS-адрес</span><input id="nodeUrl" required type="url" placeholder="https://203.0.113.10:8088"></label>
             <label><span>Токен ноды</span><input id="nodeToken" required type="password" autocomplete="new-password"></label>
             <label><span>SHA-256 сертификата <em>для self-signed</em></span><input id="nodeFingerprint" placeholder="64 шестнадцатеричных символа"></label>
             <div class="node-form-actions"><button type="button" id="cancelNode" class="secondary">Отмена</button><button class="primary">Подключить</button></div>
-          </form>
-          <div id="nodesList" class="nodes-list"><div class="empty">Подключённых нод пока нет.</div></div>
+          </form><div id="nodesList" class="nodes-list"><div class="empty">Подключённых нод пока нет.</div></div>
         </article>
       </section>
-
-      <section id="view-logs" class="view">
-        <article class="card logs-card"><div class="card-head"><div><h2>Журнал OpenFlux</h2><p>Последние 250 строк, секреты не отображаются</p></div><button id="copyLogs" class="secondary small">Копировать</button></div><pre id="logs">Ожидание данных…</pre></article>
-      </section>
+      <section id="view-logs" class="view"><article class="card logs-card"><div class="card-head"><div><h2>Журнал подключения</h2><p>Записи других пользователей недоступны</p></div><div class="header-actions"><select id="logConnection"></select><button id="copyLogs" class="secondary small">Копировать</button></div></div><pre id="logs">Выберите подключение…</pre></article></section>
     </main>
   </div>
-  <div id="toast" role="status"></div>
-  <script>try{const u=new URL(location.href);if(u.username||u.password)history.replaceState(null,"",u.pathname+u.search+u.hash)}catch(_){}</script>
-  <script src="/app.js"></script>
+  <div id="toast" role="status"></div><script src="/app.js"></script>
 </body>
 </html>

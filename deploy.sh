@@ -52,18 +52,28 @@ if [ "$INSTALL_MODE" = auto ]; then
 fi
 case "$INSTALL_MODE" in systemd|docker) ;; *) fail "--mode: systemd или docker";; esac
 
-if [ -z "$ADMIN_PASSWORD" ]; then ADMIN_PASSWORD="$(random_hex 12)"; GENERATED_PASSWORD=1; else GENERATED_PASSWORD=0; fi
-if [ -z "$NODE_TOKEN" ]; then NODE_TOKEN="$(random_hex 32)"; fi
+EXISTING_USERS=0
+if [ -f "$CONFIG_DIR/users.json" ]; then
+  EXISTING_USERS=1
+  [ -f "$CONFIG_DIR/panel.env" ] || fail "users.json существует, но panel.env отсутствует; восстановите конфигурацию перед переустановкой"
+  OLD_PORT="$(sed -n 's/^OPENFLUX_LISTEN=://p' "$CONFIG_DIR/panel.env" | head -n 1)"
+  [ -n "$OLD_PORT" ] && PORT="$OLD_PORT"
+  say "Найдены существующие пользователи: пароли и порт останутся прежними"
+else
+  if [ -z "$ADMIN_PASSWORD" ]; then ADMIN_PASSWORD="$(random_hex 12)"; GENERATED_PASSWORD=1; else GENERATED_PASSWORD=0; fi
+  if [ -z "$NODE_TOKEN" ]; then NODE_TOKEN="$(random_hex 32)"; fi
+fi
+GENERATED_PASSWORD="${GENERATED_PASSWORD:-0}"
 case "$ADMIN_USER$ADMIN_PASSWORD$NODE_TOKEN" in *$'\n'*|*$'\r'*) fail "логин, пароль и токен не должны содержать переносы строк";; esac
 
 install_packages(){
   if have apt-get; then
     apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl git tar openssl python3 iptables >/dev/null
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl git tar openssl python3 iptables jq >/dev/null
   elif have dnf; then
-    dnf install -y ca-certificates curl git tar openssl python3 iptables >/dev/null
+    dnf install -y ca-certificates curl git tar openssl python3 iptables jq >/dev/null
   elif have apk; then
-    apk add --no-cache ca-certificates curl git tar openssl python3 iptables >/dev/null
+    apk add --no-cache ca-certificates curl git tar openssl python3 iptables jq >/dev/null
   else fail "поддерживаются apt, dnf и apk"; fi
 }
 
@@ -125,6 +135,7 @@ install_go(){
 }
 
 write_env(){
+  [ "$EXISTING_USERS" -eq 0 ] || return 0
   umask 077
   cat >"$CONFIG_DIR/panel.env" <<EOF
 OPENFLUX_ADMIN_USER=$(escape_env "$ADMIN_USER")
@@ -132,6 +143,8 @@ OPENFLUX_ADMIN_PASSWORD=$(escape_env "$ADMIN_PASSWORD")
 OPENFLUX_NODE_TOKEN=$(escape_env "$NODE_TOKEN")
 OPENFLUX_LISTEN=:$PORT
 OPENFLUX_CONFIG=$CONFIG_DIR/config.json
+OPENFLUX_USERS=$CONFIG_DIR/users.json
+OPENFLUX_CONNECTIONS=$CONFIG_DIR/connections.json
 OPENFLUX_NODES=$CONFIG_DIR/nodes.json
 OPENFLUX_TLS_CERT=$CONFIG_DIR/tls/cert.pem
 OPENFLUX_TLS_KEY=$CONFIG_DIR/tls/key.pem
@@ -210,14 +223,17 @@ install_docker(){
   cp "$PREFIX/source/deploy/Dockerfile" "$PREFIX/Dockerfile"
   cp "$PREFIX/source/deploy/entrypoint.sh" "$PREFIX/entrypoint.sh"
   cp "$PREFIX/source/deploy/update.sh" "$PREFIX/update.sh"
-  cat >"$PREFIX/.env" <<EOF
+  if [ "$EXISTING_USERS" -eq 0 ]; then cat >"$PREFIX/.env" <<EOF
 OPENFLUX_PORT=$PORT
 OPENFLUX_ADMIN_USER=$(escape_env "$ADMIN_USER")
 OPENFLUX_ADMIN_PASSWORD=$(escape_env "$ADMIN_PASSWORD")
 OPENFLUX_NODE_TOKEN=$(escape_env "$NODE_TOKEN")
 OPENFLUX_UPSTREAM_REPO=$(escape_env "$UPSTREAM_REPO")
 EOF
-  chmod 600 "$PREFIX/.env"
+    chmod 600 "$PREFIX/.env"
+  else
+    [ -f "$PREFIX/.env" ] || fail "существующая Docker-установка без .env; восстановите файл перед переустановкой"
+  fi
   printf 'docker\n' >"$CONFIG_DIR/install-mode"
   (cd "$PREFIX" && docker compose up -d --build)
 }
@@ -232,9 +248,14 @@ if [ "$INSTALL_MODE" = systemd ]; then install_systemd; else install_docker; fi
 FINGERPRINT="$(openssl x509 -in "$CONFIG_DIR/tls/cert.pem" -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':')"
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"; [ -n "$IP" ] || IP="SERVER_IP"
 say "Готово: https://$IP:$PORT"
-printf '  Логин: %s\n  Пароль: %s\n' "$ADMIN_USER" "$ADMIN_PASSWORD"
+if [ "$EXISTING_USERS" -eq 0 ]; then
+  printf '  Логин: %s\n  Пароль: %s\n' "$ADMIN_USER" "$ADMIN_PASSWORD"
+else
+  say "Используйте прежние учётные данные. Пароль можно сменить в разделе «Пользователи»."
+fi
 if [ "$ROLE" = node ]; then
-  printf '\n  Данные для подключения ноды:\n  URL: https://%s:%s\n  Токен: %s\n  SHA-256: %s\n' "$IP" "$PORT" "$NODE_TOKEN" "$FINGERPRINT"
+  printf '\n  Данные для подключения ноды:\n  URL: https://%s:%s\n  SHA-256: %s\n' "$IP" "$PORT" "$FINGERPRINT"
+  if [ "$EXISTING_USERS" -eq 0 ]; then printf '  Токен: %s\n' "$NODE_TOKEN"; else say "Токен ноды сохранён в прежней конфигурации."; fi
 fi
 [ "$GENERATED_PASSWORD" -eq 1 ] && say "Сохраните сгенерированный пароль: повторно он не показывается."
 say "Первый вход вызовет предупреждение о self-signed сертификате — сверьте SHA-256: $FINGERPRINT"

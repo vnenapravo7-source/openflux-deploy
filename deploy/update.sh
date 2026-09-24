@@ -50,10 +50,8 @@ sleep 4
 PORT="${OPENFLUX_LISTEN##*:}"
 SCHEME=http
 [ -n "${OPENFLUX_TLS_CERT:-}" ] && SCHEME=https
-STATE="$(curl -kfsS --max-time 8 --user "${OPENFLUX_ADMIN_USER:-admin}:${OPENFLUX_ADMIN_PASSWORD:-}" \
-  "$SCHEME://127.0.0.1:$PORT/api/state" 2>/dev/null || true)"
-if grep -Eq '"enabled"[[:space:]]*:[[:space:]]*true' "$CONFIG" && \
-   ! printf '%s' "$STATE" | grep -Eq '"running"[[:space:]]*:[[:space:]]*true'; then
+STATE="$(curl -kfsS --max-time 8 "$SCHEME://127.0.0.1:$PORT/healthz" 2>/dev/null || true)"
+if ! printf '%s' "$STATE" | jq -e '.ok == true and (.running >= .enabled)' >/dev/null 2>&1; then
   if [ -f "$BINARY.rollback" ]; then
     say "new binary did not stay running; rolling back"
     cp -p "$BINARY.rollback" "$BINARY.new"

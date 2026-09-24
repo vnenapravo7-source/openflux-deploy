@@ -14,7 +14,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/openflux-panel .
 
 FROM golang:1.26-alpine
-RUN apk add --no-cache bash ca-certificates curl git iptables openssl
+RUN apk add --no-cache bash ca-certificates curl git iptables jq openssl
 COPY --from=openflux-build /out/openflux /usr/local/lib/openflux-deploy/openflux.seed
 COPY --from=openflux-build /out/upstream-version /usr/local/lib/openflux-deploy/upstream-version.seed
 COPY --from=panel-build /out/openflux-panel /usr/local/bin/openflux-panel

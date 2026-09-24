@@ -19,6 +19,8 @@ services:
       OPENFLUX_NODE_TOKEN: ${OPENFLUX_NODE_TOKEN:?set in .env}
       OPENFLUX_LISTEN: :${OPENFLUX_PORT:-8088}
       OPENFLUX_CONFIG: /etc/openflux-deploy/config.json
+      OPENFLUX_USERS: /etc/openflux-deploy/users.json
+      OPENFLUX_CONNECTIONS: /etc/openflux-deploy/connections.json
       OPENFLUX_NODES: /etc/openflux-deploy/nodes.json
       OPENFLUX_TLS_CERT: /etc/openflux-deploy/tls/cert.pem
       OPENFLUX_TLS_KEY: /etc/openflux-deploy/tls/key.pem

@@ -1,698 +1,423 @@
 package main
 
 import (
-	"bufio"
-	"crypto/sha256"
+	"context"
 	"crypto/subtle"
-	"crypto/tls"
 	"embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
-	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 )
 
-const panelVersion = "0.1.0"
+const panelVersion = "0.2.0"
 
 //go:embed static/*
 var staticFiles embed.FS
 
-type Config struct {
-	Enabled           bool   `json:"enabled"`
-	Transport         string `json:"transport"`
-	URL               string `json:"url"`
-	Mode              string `json:"mode"`
-	Codec             string `json:"codec"`
-	LocalIP           string `json:"local_ip"`
-	EncryptionKeyFile string `json:"encryption_key_file"`
-	Debug             bool   `json:"debug"`
-	AutoUpdate        bool   `json:"auto_update"`
+type contextUserKey struct{}
+type session struct {
+	userID  string
+	expires time.Time
 }
-
-type TrafficPoint struct {
-	At int64   `json:"at"`
-	RX float64 `json:"rx"`
-	TX float64 `json:"tx"`
-}
-
-type Node struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	BaseURL   string `json:"base_url"`
-	Token     string `json:"token,omitempty"`
-	TLSSHA256 string `json:"tls_sha256,omitempty"`
-}
-
-type NodeView struct {
-	ID              string  `json:"id"`
-	Name            string  `json:"name"`
-	BaseURL         string  `json:"base_url"`
-	Online          bool    `json:"online"`
-	Running         bool    `json:"running"`
-	Transport       string  `json:"transport,omitempty"`
-	UpstreamVersion string  `json:"upstream_version,omitempty"`
-	RX              float64 `json:"rx,omitempty"`
-	TX              float64 `json:"tx,omitempty"`
-	Error           string  `json:"error,omitempty"`
-}
-
-type Manager struct {
-	mu          sync.Mutex
-	configPath  string
-	binaryPath  string
-	versionPath string
-	updatePath  string
-	nodesPath   string
-	config      Config
-	cmd         *exec.Cmd
-	startedAt   time.Time
-	restarts    int
-	lastError   string
-	logs        []string
-	traffic     []TrafficPoint
-	updating    bool
-	nodes       []Node
-}
-
-func defaults() Config {
-	return Config{Transport: "yandex", Mode: "l4", Codec: "batched", AutoUpdate: true}
-}
-
-func NewManager(configPath, binaryPath, versionPath, updatePath, nodesPath string) (*Manager, error) {
-	m := &Manager{configPath: configPath, binaryPath: binaryPath, versionPath: versionPath, updatePath: updatePath, nodesPath: nodesPath, config: defaults()}
-	if raw, err := os.ReadFile(configPath); err == nil {
-		if err := json.Unmarshal(raw, &m.config); err != nil {
-			return nil, fmt.Errorf("read config: %w", err)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	if err := validateConfig(m.config); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
-	}
-	if raw, err := os.ReadFile(nodesPath); err == nil {
-		if err := json.Unmarshal(raw, &m.nodes); err != nil {
-			return nil, fmt.Errorf("read nodes: %w", err)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	go m.sampleTraffic()
-	if interval, err := time.ParseDuration(os.Getenv("OPENFLUX_AUTO_UPDATE_INTERVAL")); err == nil && interval > 0 {
-		go m.autoUpdateLoop(interval)
-	}
-	if m.config.Enabled {
-		if err := m.start(); err != nil {
-			m.lastError = err.Error()
-		}
-	}
-	return m, nil
-}
-
-func (m *Manager) autoUpdateLoop(interval time.Duration) {
-	delay := 20 * time.Minute
-	if parsed, err := time.ParseDuration(os.Getenv("OPENFLUX_AUTO_UPDATE_DELAY")); err == nil && parsed >= 0 {
-		delay = parsed
-	}
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	<-timer.C
-	for {
-		m.mu.Lock()
-		enabled := m.config.AutoUpdate
-		m.mu.Unlock()
-		if enabled {
-			_ = m.update()
-		}
-		time.Sleep(interval)
-	}
-}
-
-func normalizeFingerprint(v string) string {
-	return strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(v), ":", ""), " ", ""))
-}
-
-func validateNode(n Node) error {
-	if strings.TrimSpace(n.Name) == "" || strings.TrimSpace(n.Token) == "" {
-		return fmt.Errorf("node name and token are required")
-	}
-	u, err := url.ParseRequestURI(n.BaseURL)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
-		return fmt.Errorf("node URL must be an https URL without credentials")
-	}
-	if fp := normalizeFingerprint(n.TLSSHA256); fp != "" {
-		if len(fp) != 64 {
-			return fmt.Errorf("TLS SHA-256 fingerprint must contain 64 hex characters")
-		}
-		if _, err := hex.DecodeString(fp); err != nil {
-			return fmt.Errorf("invalid TLS SHA-256 fingerprint")
-		}
-	}
-	return nil
-}
-
-func (m *Manager) saveNodesLocked() error {
-	raw, err := json.MarshalIndent(m.nodes, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(m.nodesPath), 0700); err != nil {
-		return err
-	}
-	tmp := m.nodesPath + ".tmp"
-	if err := os.WriteFile(tmp, append(raw, '\n'), 0600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, m.nodesPath)
-}
-
-func (m *Manager) addNode(n Node) error {
-	if err := validateNode(n); err != nil {
-		return err
-	}
-	n.BaseURL = strings.TrimRight(n.BaseURL, "/")
-	n.TLSSHA256 = normalizeFingerprint(n.TLSSHA256)
-	sum := sha256.Sum256([]byte(n.BaseURL + time.Now().String()))
-	n.ID = hex.EncodeToString(sum[:6])
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, existing := range m.nodes {
-		if existing.BaseURL == n.BaseURL {
-			return fmt.Errorf("node URL already exists")
-		}
-	}
-	m.nodes = append(m.nodes, n)
-	return m.saveNodesLocked()
-}
-
-func (m *Manager) deleteNode(id string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for i := range m.nodes {
-		if m.nodes[i].ID == id {
-			m.nodes = append(m.nodes[:i], m.nodes[i+1:]...)
-			return m.saveNodesLocked()
-		}
-	}
-	return os.ErrNotExist
-}
-
-func (m *Manager) nodesSnapshot() []Node {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]Node(nil), m.nodes...)
-}
-
-func nodeClient(n Node) *http.Client {
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
-	if fp := normalizeFingerprint(n.TLSSHA256); fp != "" {
-		tlsConfig.InsecureSkipVerify = true // Verification is replaced by the exact SHA-256 pin below.
-		tlsConfig.VerifyConnection = func(cs tls.ConnectionState) error {
-			if len(cs.PeerCertificates) == 0 {
-				return fmt.Errorf("node returned no certificate")
-			}
-			sum := sha256.Sum256(cs.PeerCertificates[0].Raw)
-			if hex.EncodeToString(sum[:]) != fp {
-				return fmt.Errorf("TLS certificate fingerprint mismatch")
-			}
-			return nil
-		}
-	}
-	return &http.Client{Timeout: 8 * time.Second, Transport: &http.Transport{TLSClientConfig: tlsConfig}}
-}
-
-func callNode(n Node, method, path string, out any) error {
-	req, err := http.NewRequest(method, n.BaseURL+path, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+n.Token)
-	req.Header.Set("X-OpenFlux-Action", "1")
-	resp, err := nodeClient(n).Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("node returned HTTP %d", resp.StatusCode)
-	}
-	if out != nil {
-		return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out)
-	}
-	return nil
-}
-
-func (m *Manager) nodeViews() []NodeView {
-	nodes := m.nodesSnapshot()
-	views := make([]NodeView, len(nodes))
-	var wg sync.WaitGroup
-	for i, n := range nodes {
-		wg.Add(1)
-		go func(i int, n Node) {
-			defer wg.Done()
-			views[i] = NodeView{ID: n.ID, Name: n.Name, BaseURL: n.BaseURL}
-			var state map[string]json.RawMessage
-			if err := callNode(n, http.MethodGet, "/node/v1/state", &state); err != nil {
-				views[i].Error = err.Error()
-				return
-			}
-			views[i].Online = true
-			_ = json.Unmarshal(state["running"], &views[i].Running)
-			_ = json.Unmarshal(state["upstream_version"], &views[i].UpstreamVersion)
-			var cfg Config
-			_ = json.Unmarshal(state["config"], &cfg)
-			views[i].Transport = cfg.Transport
-			var traffic []TrafficPoint
-			_ = json.Unmarshal(state["traffic"], &traffic)
-			if len(traffic) > 0 {
-				views[i].RX = traffic[len(traffic)-1].RX
-				views[i].TX = traffic[len(traffic)-1].TX
-			}
-		}(i, n)
-	}
-	wg.Wait()
-	return views
-}
-
-func validateConfig(c Config) error {
-	switch c.Transport {
-	case "yandex", "vyandex", "mailru", "cupsonline":
-	default:
-		return fmt.Errorf("unsupported transport %q", c.Transport)
-	}
-	if c.Mode != "l3" && c.Mode != "l4" {
-		return fmt.Errorf("mode must be l3 or l4")
-	}
-	if c.Codec != "batched" && c.Codec != "legacy" {
-		return fmt.Errorf("codec must be batched or legacy")
-	}
-	if c.Enabled && c.Transport != "cupsonline" {
-		if strings.TrimSpace(c.URL) == "" {
-			return fmt.Errorf("document URL is required")
-		}
-		u, err := url.ParseRequestURI(c.URL)
-		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-			return fmt.Errorf("document URL must be an http(s) URL")
-		}
-	}
-	return nil
-}
-
-func (m *Manager) argsLocked() []string {
-	c := m.config
-	args := []string{"--role=exit", "--mode=" + c.Mode, "--transport=" + c.Transport, "--codec=" + c.Codec}
-	if c.URL != "" {
-		args = append(args, "--url="+c.URL)
-	}
-	if c.LocalIP != "" {
-		args = append(args, "--local-ip="+c.LocalIP)
-	}
-	if c.EncryptionKeyFile != "" {
-		args = append(args, "--encryption-key-file="+c.EncryptionKeyFile)
-	}
-	if c.Debug {
-		args = append(args, "--debug")
-	}
-	return args
-}
-
-func (m *Manager) start() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.startLocked()
-}
-
-func (m *Manager) startLocked() error {
-	if !m.config.Enabled || m.cmd != nil {
-		return nil
-	}
-	cmd := exec.Command(m.binaryPath, m.argsLocked()...)
-	pipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	cmd.Stderr = cmd.Stdout
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	m.cmd = cmd
-	m.startedAt = time.Now()
-	m.lastError = ""
-	m.appendLogLocked(fmt.Sprintf("[panel] OpenFlux started, pid=%d", cmd.Process.Pid))
-	go m.capture(pipe)
-	go m.wait(cmd)
-	return nil
-}
-
-func (m *Manager) capture(r io.Reader) {
-	s := bufio.NewScanner(r)
-	buf := make([]byte, 64*1024)
-	s.Buffer(buf, 1024*1024)
-	for s.Scan() {
-		m.mu.Lock()
-		m.appendLogLocked(s.Text())
-		m.mu.Unlock()
-	}
-}
-
-func (m *Manager) wait(cmd *exec.Cmd) {
-	err := cmd.Wait()
-	m.mu.Lock()
-	if m.cmd != cmd {
-		m.mu.Unlock()
-		return
-	}
-	m.cmd = nil
-	if err != nil {
-		m.lastError = err.Error()
-		m.appendLogLocked("[panel] OpenFlux stopped: " + err.Error())
-	} else {
-		m.appendLogLocked("[panel] OpenFlux stopped")
-	}
-	shouldRestart := m.config.Enabled
-	if shouldRestart {
-		m.restarts++
-	}
-	m.mu.Unlock()
-	if shouldRestart {
-		time.Sleep(3 * time.Second)
-		if err := m.start(); err != nil {
-			m.mu.Lock()
-			m.lastError = err.Error()
-			m.mu.Unlock()
-		}
-	}
-}
-
-func (m *Manager) appendLogLocked(line string) {
-	line = time.Now().Format("15:04:05") + "  " + line
-	m.logs = append(m.logs, line)
-	if len(m.logs) > 250 {
-		m.logs = append([]string(nil), m.logs[len(m.logs)-250:]...)
-	}
-}
-
-func (m *Manager) restart() error {
-	m.mu.Lock()
-	old := m.cmd
-	if old != nil {
-		m.cmd = nil
-		_ = old.Process.Kill()
-		m.appendLogLocked("[panel] restart requested")
-	}
-	m.restarts++
-	err := m.startLocked()
-	m.mu.Unlock()
-	return err
-}
-
-func (m *Manager) save(c Config) error {
-	if err := validateConfig(c); err != nil {
-		return err
-	}
-	raw, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(m.configPath), 0700); err != nil {
-		return err
-	}
-	tmp := m.configPath + ".tmp"
-	if err := os.WriteFile(tmp, append(raw, '\n'), 0600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, m.configPath); err != nil {
-		return err
-	}
-	m.mu.Lock()
-	m.config = c
-	m.mu.Unlock()
-	return m.restart()
-}
-
-func readNetworkTotals() (uint64, uint64, error) {
-	f, err := os.Open("/proc/net/dev")
-	if err != nil {
-		return 0, 0, err
-	}
-	defer f.Close()
-	var rx, tx uint64
-	s := bufio.NewScanner(f)
-	for s.Scan() {
-		line := strings.TrimSpace(s.Text())
-		if !strings.Contains(line, ":") {
-			continue
-		}
-		parts := strings.SplitN(line, ":", 2)
-		if strings.TrimSpace(parts[0]) == "lo" {
-			continue
-		}
-		fields := strings.Fields(parts[1])
-		if len(fields) < 9 {
-			continue
-		}
-		r, er := strconv.ParseUint(fields[0], 10, 64)
-		t, et := strconv.ParseUint(fields[8], 10, 64)
-		if er == nil && et == nil {
-			rx += r
-			tx += t
-		}
-	}
-	return rx, tx, s.Err()
-}
-
-func (m *Manager) sampleTraffic() {
-	var oldRX, oldTX uint64
-	oldAt := time.Now()
-	oldRX, oldTX, _ = readNetworkTotals()
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	for now := range ticker.C {
-		rx, tx, err := readNetworkTotals()
-		if err != nil {
-			continue
-		}
-		seconds := now.Sub(oldAt).Seconds()
-		point := TrafficPoint{At: now.Unix()}
-		if rx >= oldRX && tx >= oldTX && seconds > 0 {
-			point.RX = float64(rx-oldRX) / seconds
-			point.TX = float64(tx-oldTX) / seconds
-		}
-		oldRX, oldTX, oldAt = rx, tx, now
-		m.mu.Lock()
-		m.traffic = append(m.traffic, point)
-		if len(m.traffic) > 120 {
-			m.traffic = append([]TrafficPoint(nil), m.traffic[len(m.traffic)-120:]...)
-		}
-		m.mu.Unlock()
-	}
-}
-
-func (m *Manager) version() string {
-	raw, err := os.ReadFile(m.versionPath)
-	if err != nil {
-		return "unknown"
-	}
-	return strings.TrimSpace(string(raw))
-}
-
-func (m *Manager) state() map[string]any {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	running, pid, uptime := false, 0, int64(0)
-	if m.cmd != nil && m.cmd.Process != nil {
-		running = true
-		pid = m.cmd.Process.Pid
-		uptime = int64(time.Since(m.startedAt).Seconds())
-	}
-	return map[string]any{
-		"config": m.config, "running": running, "pid": pid, "uptime": uptime,
-		"restarts": m.restarts, "last_error": m.lastError, "logs": append([]string{}, m.logs...),
-		"traffic": append([]TrafficPoint{}, m.traffic...), "upstream_version": m.version(),
-		"panel_version": panelVersion, "updating": m.updating,
-	}
-}
-
-func (m *Manager) update() error {
-	m.mu.Lock()
-	if m.updating {
-		m.mu.Unlock()
-		return fmt.Errorf("update already running")
-	}
-	m.updating = true
-	m.appendLogLocked("[panel] update requested")
-	m.mu.Unlock()
-	go func() {
-		cmd := exec.Command(m.updatePath, "--force")
-		out, err := cmd.CombinedOutput()
-		m.mu.Lock()
-		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			if line != "" {
-				m.appendLogLocked("[update] " + line)
-			}
-		}
-		if err != nil {
-			m.lastError = "update: " + err.Error()
-		}
-		m.updating = false
-		m.mu.Unlock()
-	}()
-	return nil
+type loginAttempt struct {
+	failures int
+	since    time.Time
 }
 
 type server struct {
-	mgr       *Manager
-	user      string
-	pass      string
-	nodeToken string
+	mgr           *Manager
+	users         *UserStore
+	nodeToken     string
+	secureCookies bool
+	mu            sync.Mutex
+	sessions      map[string]session
+	attempts      map[string]loginAttempt
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
+}
+
+func apiError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"error": message})
+}
+func actionAllowed(r *http.Request) bool { return r.Header.Get("X-OpenFlux-Action") == "1" }
+
+func decodeBody(w http.ResponseWriter, r *http.Request, value any) error {
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		return fmt.Errorf("JSON body required")
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(value); err != nil {
+		return err
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		return fmt.Errorf("only one JSON value is allowed")
+	}
+	return nil
+}
+
+func (s *server) login(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !actionAllowed(r) {
+		apiError(w, http.StatusMethodNotAllowed, "POST required")
+		return
+	}
+	var input struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := decodeBody(w, r, &input); err != nil {
+		apiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		ip = r.RemoteAddr
+	}
+	s.mu.Lock()
+	a := s.attempts[ip]
+	blocked := a.failures >= 10 && time.Since(a.since) < 5*time.Minute
+	s.mu.Unlock()
+	if blocked {
+		apiError(w, http.StatusTooManyRequests, "too many login attempts; try later")
+		return
+	}
+	u, ok := s.users.authenticate(input.Username, input.Password)
+	if !ok {
+		s.mu.Lock()
+		if time.Since(a.since) > 5*time.Minute {
+			a = loginAttempt{since: time.Now()}
+		}
+		a.failures++
+		s.attempts[ip] = a
+		s.mu.Unlock()
+		apiError(w, http.StatusUnauthorized, "invalid username or password")
+		return
+	}
+	token, err := newID()
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, "session creation failed")
+		return
+	}
+	s.mu.Lock()
+	delete(s.attempts, ip)
+	s.sessions[token] = session{userID: u.ID, expires: time.Now().Add(24 * time.Hour)}
+	s.mu.Unlock()
+	http.SetCookie(w, &http.Cookie{Name: "of_session", Value: token, Path: "/", HttpOnly: true, Secure: s.secureCookies, SameSite: http.SameSiteStrictMode, MaxAge: 86400})
+	writeJSON(w, http.StatusOK, map[string]any{"me": UserView{u.ID, u.Username, u.Role}})
 }
 
 func (s *server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" {
+		if r.URL.Path == "/healthz" || r.URL.Path == "/api/login" || !strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, "/node/v1/") {
 			next.ServeHTTP(w, r)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/node/v1/") {
 			provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 			if s.nodeToken == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(s.nodeToken)) != 1 {
-				http.Error(w, "invalid node token", http.StatusUnauthorized)
+				apiError(w, http.StatusUnauthorized, "invalid node token")
 				return
 			}
 			next.ServeHTTP(w, r)
 			return
 		}
-		u, p, ok := r.BasicAuth()
-		userOK := subtle.ConstantTimeCompare([]byte(u), []byte(s.user)) == 1
-		passOK := subtle.ConstantTimeCompare([]byte(p), []byte(s.pass)) == 1
-		if !ok || !userOK || !passOK {
-			w.Header().Set("WWW-Authenticate", `Basic realm="OpenFlux Control"`)
-			http.Error(w, "authentication required", http.StatusUnauthorized)
+		cookie, err := r.Cookie("of_session")
+		if err != nil {
+			apiError(w, http.StatusUnauthorized, "login required")
 			return
 		}
-		next.ServeHTTP(w, r)
+		s.mu.Lock()
+		sess, ok := s.sessions[cookie.Value]
+		s.mu.Unlock()
+		if !ok || time.Now().After(sess.expires) {
+			apiError(w, http.StatusUnauthorized, "login required")
+			return
+		}
+		u, ok := s.users.get(sess.userID)
+		if !ok {
+			apiError(w, http.StatusUnauthorized, "account unavailable")
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), contextUserKey{}, u)))
 	})
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+func currentUser(r *http.Request) User { u, _ := r.Context().Value(contextUserKey{}).(User); return u }
+func requireAdmin(w http.ResponseWriter, u User) bool {
+	if u.Role != "admin" {
+		apiError(w, http.StatusForbidden, "administrator required")
+		return false
+	}
+	return true
+}
+func requireAction(w http.ResponseWriter, r *http.Request) bool {
+	if !actionAllowed(r) {
+		apiError(w, http.StatusForbidden, "action header required")
+		return false
+	}
+	return true
 }
 
-func actionAllowed(r *http.Request) bool {
-	return r.Header.Get("X-OpenFlux-Action") == "1"
+func (s *server) invalidateUser(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for token, session := range s.sessions {
+		if session.userID == id {
+			delete(s.sessions, token)
+		}
+	}
 }
 
 func (s *server) api(w http.ResponseWriter, r *http.Request) {
+	u := currentUser(r)
+	path := r.URL.Path
 	switch {
-	case r.Method == http.MethodGet && r.URL.Path == "/api/state":
-		state := s.mgr.state()
-		state["nodes"] = s.mgr.nodeViews()
-		writeJSON(w, http.StatusOK, state)
-	case r.Method == http.MethodPost && r.URL.Path == "/api/nodes":
-		if !actionAllowed(r) || !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "action header required"})
+	case r.Method == http.MethodGet && path == "/api/state":
+		writeJSON(w, http.StatusOK, s.mgr.state(u))
+	case r.Method == http.MethodPost && path == "/api/logout":
+		if !requireAction(w, r) {
 			return
 		}
-		var n Node
-		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&n); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
+		if c, err := r.Cookie("of_session"); err == nil {
+			s.mu.Lock()
+			delete(s.sessions, c.Value)
+			s.mu.Unlock()
 		}
-		if err := s.mgr.addNode(n); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
-		}
-		writeJSON(w, http.StatusCreated, map[string]bool{"ok": true})
-	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/nodes/"):
-		if !actionAllowed(r) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "action header required"})
-			return
-		}
-		if err := s.mgr.deleteNode(strings.TrimPrefix(r.URL.Path, "/api/nodes/")); err != nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
-			return
-		}
+		http.SetCookie(w, &http.Cookie{Name: "of_session", Path: "/", Value: "", MaxAge: -1, HttpOnly: true, Secure: s.secureCookies, SameSite: http.SameSiteStrictMode})
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/nodes/"):
-		if !actionAllowed(r) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "action header required"})
+	case r.Method == http.MethodGet && path == "/api/users":
+		if !requireAdmin(w, u) {
 			return
 		}
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/nodes/"), "/")
-		if len(parts) != 2 || (parts[1] != "restart" && parts[1] != "update") {
+		writeJSON(w, http.StatusOK, s.users.list())
+	case r.Method == http.MethodPost && path == "/api/users":
+		if !requireAdmin(w, u) || !requireAction(w, r) {
+			return
+		}
+		var input struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+			Role     string `json:"role"`
+		}
+		if err := decodeBody(w, r, &input); err != nil {
+			apiError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		view, err := s.users.add(input.Username, input.Password, input.Role)
+		if err != nil {
+			apiError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, view)
+	case strings.HasPrefix(path, "/api/users/"):
+		id := strings.TrimPrefix(path, "/api/users/")
+		if strings.HasSuffix(id, "/password") && r.Method == http.MethodPut {
+			id = strings.TrimSuffix(id, "/password")
+			if u.ID != id && !requireAdmin(w, u) {
+				return
+			}
+			if !requireAction(w, r) {
+				return
+			}
+			var input struct {
+				Password string `json:"password"`
+			}
+			if err := decodeBody(w, r, &input); err != nil {
+				apiError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if err := s.users.changePassword(id, input.Password); err != nil {
+				apiError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			s.invalidateUser(id)
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+			return
+		}
+		if r.Method == http.MethodDelete {
+			if !requireAdmin(w, u) || !requireAction(w, r) {
+				return
+			}
+			if u.ID == id {
+				apiError(w, http.StatusBadRequest, "cannot delete your own account")
+				return
+			}
+			if _, ok := s.users.get(id); !ok {
+				apiError(w, http.StatusNotFound, "user not found")
+				return
+			}
+			if err := s.mgr.removeUserConnections(id); err != nil {
+				apiError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			if err := s.users.delete(id); err != nil {
+				apiError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			s.invalidateUser(id)
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+			return
+		}
+		http.NotFound(w, r)
+	case r.Method == http.MethodPost && path == "/api/connections":
+		if !requireAction(w, r) {
+			return
+		}
+		var c Connection
+		if err := decodeBody(w, r, &c); err != nil {
+			apiError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if u.Role != "admin" {
+			c.OwnerID = u.ID
+		} else if c.OwnerID == "" {
+			c.OwnerID = u.ID
+		}
+		if _, ok := s.users.get(c.OwnerID); !ok {
+			apiError(w, http.StatusBadRequest, "owner not found")
+			return
+		}
+		added, err := s.mgr.addConnection(c)
+		if err != nil {
+			apiError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, added)
+	case strings.HasPrefix(path, "/api/connections/"):
+		tail := strings.TrimPrefix(path, "/api/connections/")
+		parts := strings.Split(tail, "/")
+		if len(parts) > 2 || parts[0] == "" {
 			http.NotFound(w, r)
 			return
 		}
-		var selected *Node
-		for _, n := range s.mgr.nodesSnapshot() {
-			if n.ID == parts[0] {
-				copy := n
-				selected = &copy
-				break
+		current, ok := s.mgr.connection(parts[0])
+		if !ok {
+			apiError(w, http.StatusNotFound, "connection not found")
+			return
+		}
+		if u.Role != "admin" && current.OwnerID != u.ID {
+			apiError(w, http.StatusNotFound, "connection not found")
+			return
+		}
+		if !requireAction(w, r) {
+			return
+		}
+		if len(parts) == 2 && parts[1] == "restart" && r.Method == http.MethodPost {
+			if err := s.mgr.restart(parts[0]); err != nil {
+				apiError(w, http.StatusInternalServerError, err.Error())
+				return
 			}
-		}
-		if selected == nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 			return
 		}
-		if err := callNode(*selected, http.MethodPost, "/node/v1/"+parts[1], nil); err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		if len(parts) == 1 && r.Method == http.MethodPut {
+			var c Connection
+			if err := decodeBody(w, r, &c); err != nil {
+				apiError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if err := s.mgr.updateConnection(parts[0], c); err != nil {
+				apiError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 			return
 		}
-		writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
-	case r.Method == http.MethodPut && r.URL.Path == "/api/config":
-		if !actionAllowed(r) || !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "action header required"})
+		if len(parts) == 1 && r.Method == http.MethodDelete {
+			if err := s.mgr.deleteConnection(parts[0]); err != nil {
+				apiError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 			return
 		}
-		var c Config
-		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&c); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		http.NotFound(w, r)
+	case r.Method == http.MethodGet && path == "/api/nodes":
+		if !requireAdmin(w, u) {
 			return
 		}
-		if err := s.mgr.save(c); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusOK, s.mgr.nodeViews())
+	case r.Method == http.MethodPost && path == "/api/nodes":
+		if !requireAdmin(w, u) || !requireAction(w, r) {
+			return
+		}
+		var n Node
+		if err := decodeBody(w, r, &n); err != nil {
+			apiError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := s.mgr.addNode(n); err != nil {
+			apiError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]bool{"ok": true})
+	case strings.HasPrefix(path, "/api/nodes/"):
+		if !requireAdmin(w, u) || !requireAction(w, r) {
+			return
+		}
+		parts := strings.Split(strings.TrimPrefix(path, "/api/nodes/"), "/")
+		if len(parts) == 1 && r.Method == http.MethodDelete {
+			if err := s.mgr.deleteNode(parts[0]); err != nil {
+				apiError(w, http.StatusNotFound, "node not found")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+			return
+		}
+		if len(parts) == 2 && r.Method == http.MethodPost && (parts[1] == "restart" || parts[1] == "update") {
+			for _, n := range s.mgr.nodesSnapshot() {
+				if n.ID == parts[0] {
+					if err := callNode(n, http.MethodPost, "/node/v1/"+parts[1], nil); err != nil {
+						apiError(w, http.StatusBadGateway, err.Error())
+						return
+					}
+					writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
+					return
+				}
+			}
+			apiError(w, http.StatusNotFound, "node not found")
+			return
+		}
+		http.NotFound(w, r)
+	case r.Method == http.MethodPut && path == "/api/settings":
+		if !requireAdmin(w, u) || !requireAction(w, r) {
+			return
+		}
+		var input struct {
+			AutoUpdate bool `json:"auto_update"`
+		}
+		if err := decodeBody(w, r, &input); err != nil {
+			apiError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := s.mgr.setAutoUpdate(input.AutoUpdate); err != nil {
+			apiError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-	case r.Method == http.MethodPost && r.URL.Path == "/api/restart":
-		if !actionAllowed(r) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "action header required"})
-			return
-		}
-		if err := s.mgr.restart(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-	case r.Method == http.MethodPost && r.URL.Path == "/api/update":
-		if !actionAllowed(r) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "action header required"})
+	case r.Method == http.MethodPost && path == "/api/update":
+		if !requireAdmin(w, u) || !requireAction(w, r) {
 			return
 		}
 		if err := s.mgr.update(); err != nil {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			apiError(w, http.StatusConflict, err.Error())
 			return
 		}
 		writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
@@ -703,20 +428,17 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) nodeAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet && r.URL.Path == "/node/v1/state" {
-		writeJSON(w, http.StatusOK, s.mgr.state())
+		writeJSON(w, http.StatusOK, s.mgr.nodeState())
 		return
 	}
-	if r.Method == http.MethodPost && r.URL.Path == "/node/v1/restart" && actionAllowed(r) {
-		if err := s.mgr.restart(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
+	if r.Method == http.MethodPost && actionAllowed(r) && r.URL.Path == "/node/v1/restart" {
+		s.mgr.restartAll()
 		writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
 		return
 	}
-	if r.Method == http.MethodPost && r.URL.Path == "/node/v1/update" && actionAllowed(r) {
+	if r.Method == http.MethodPost && actionAllowed(r) && r.URL.Path == "/node/v1/update" {
 		if err := s.mgr.update(); err != nil {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			apiError(w, http.StatusConflict, err.Error())
 			return
 		}
 		writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
@@ -726,25 +448,26 @@ func (s *server) nodeAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 func env(name, fallback string) string {
-	if v := os.Getenv(name); v != "" {
-		return v
+	if value := os.Getenv(name); value != "" {
+		return value
 	}
 	return fallback
 }
 
 func main() {
-	user := env("OPENFLUX_ADMIN_USER", "admin")
-	pass := os.Getenv("OPENFLUX_ADMIN_PASSWORD")
-	if pass == "" {
-		log.Fatal("OPENFLUX_ADMIN_PASSWORD must be set")
+	userName := env("OPENFLUX_ADMIN_USER", "admin")
+	adminPassword := os.Getenv("OPENFLUX_ADMIN_PASSWORD")
+	users, err := loadUsers(env("OPENFLUX_USERS", "/etc/openflux-deploy/users.json"), userName, adminPassword)
+	if err != nil {
+		log.Fatal(err)
 	}
 	mgr, err := NewManager(
 		env("OPENFLUX_CONFIG", "/etc/openflux-deploy/config.json"),
-		env("OPENFLUX_BINARY", "/usr/local/bin/openflux"),
-		env("OPENFLUX_VERSION_FILE", "/var/lib/openflux-deploy/upstream-version"),
-		env("OPENFLUX_UPDATE_SCRIPT", "/usr/local/lib/openflux-deploy/update.sh"),
+		env("OPENFLUX_CONNECTIONS", "/etc/openflux-deploy/connections.json"),
 		env("OPENFLUX_NODES", "/etc/openflux-deploy/nodes.json"),
-	)
+		env("OPENFLUX_BINARY", "/var/lib/openflux-deploy/bin/openflux"),
+		env("OPENFLUX_VERSION_FILE", "/var/lib/openflux-deploy/upstream-version"),
+		env("OPENFLUX_UPDATE_SCRIPT", "/usr/local/lib/openflux-deploy/update.sh"), users.adminID())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -752,28 +475,29 @@ func main() {
 	signal.Notify(hup, syscall.SIGHUP)
 	go func() {
 		for range hup {
-			if err := mgr.restart(); err != nil {
-				log.Printf("restart after update: %v", err)
-			}
+			mgr.restartAll()
 		}
 	}()
 	web, err := fs.Sub(staticFiles, "static")
 	if err != nil {
 		log.Fatal(err)
 	}
+	srv := &server{mgr: mgr, users: users, nodeToken: os.Getenv("OPENFLUX_NODE_TOKEN"), secureCookies: os.Getenv("OPENFLUX_TLS_CERT") != "" && os.Getenv("OPENFLUX_TLS_KEY") != "", sessions: map[string]session{}, attempts: map[string]loginAttempt{}}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusOK, map[string]bool{"ok": true}) })
-	srv := &server{mgr: mgr, user: user, pass: pass, nodeToken: os.Getenv("OPENFLUX_NODE_TOKEN")}
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusOK, mgr.health()) })
+	mux.HandleFunc("/api/login", srv.login)
 	mux.HandleFunc("/api/", srv.api)
 	mux.HandleFunc("/node/v1/", srv.nodeAPI)
 	mux.Handle("/", http.FileServer(http.FS(web)))
-	h := srv.auth(mux)
-	addr := env("OPENFLUX_LISTEN", ":8088")
-	httpServer := &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
+	server := &http.Server{Addr: env("OPENFLUX_LISTEN", ":8088"), Handler: srv.auth(mux), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	cert, key := os.Getenv("OPENFLUX_TLS_CERT"), os.Getenv("OPENFLUX_TLS_KEY")
-	log.Printf("OpenFlux panel %s listening on %s", panelVersion, addr)
+	log.Printf("OpenFlux panel %s listening on %s", panelVersion, server.Addr)
 	if cert != "" && key != "" {
-		log.Fatal(httpServer.ListenAndServeTLS(cert, key))
+		err = server.ListenAndServeTLS(cert, key)
+	} else {
+		err = server.ListenAndServe()
 	}
-	log.Fatal(httpServer.ListenAndServe())
+	if !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
 }
