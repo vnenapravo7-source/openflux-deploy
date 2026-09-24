@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const panelVersion = "0.6.1"
+const panelVersion = "0.6.2"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -353,6 +353,12 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !requireAction(w, r) {
+			return
+		}
+		if len(parts) == 2 && parts[1] == "key" && r.Method == http.MethodPost {
+			secret, err := s.mgr.connectionKey(parts[0])
+			if err != nil { apiError(w, http.StatusBadRequest, err.Error()); return }
+			writeJSON(w, http.StatusOK, map[string]string{"key": secret})
 			return
 		}
 		if len(parts) == 2 && parts[1] == "restart" && r.Method == http.MethodPost {

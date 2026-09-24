@@ -72,18 +72,19 @@
             <div class="form-grid">
               <label><span>Название</span><input id="connectionName" required maxlength="80" placeholder="Личное подключение"></label>
               <label id="ownerField" class="admin-only"><span>Владелец</span><select id="connectionOwner"></select></label>
-              <label id="legacyTransportField"><span>Сервис транспорта</span><select id="transport"><option value="yandex">Yandex Docs</option><option value="vyandex">Yandex Volga</option><option value="boards">Yandex Board</option><option value="mailru">Mail.ru Docs</option><option value="cupsonline">Cups.online</option></select></label>
+              <label id="legacyTransportField"><span>Сервис транспорта</span><select id="transport"><option value="yandex">Yandex Docs</option><option value="vyandex">Yandex Volga</option><option value="boards">Yandex Board</option><option value="mailru">Mail.ru Docs</option><option value="cupsonline">Cups.online</option><option value="direct">Direct TCP</option></select></label>
               <label><span>Режим выхода</span><select id="mode"><option value="l4">L4 · совместимый</option><option value="l3">L3 · Linux root</option></select></label>
               <label class="wide" id="urlField"><span id="urlLabel">Публичная ссылка на документ</span><input id="docUrl" type="url" placeholder="https://…" autocomplete="off"><small id="urlHint">Доступ по ссылке должен быть разрешён.</small></label>
+              <label class="wide hidden" id="legacyDirectListenField"><span>Порт Direct на сервере</span><input id="legacyDirectListen" placeholder="Выберется автоматически" autocomplete="off"><small>Оставьте пустым: панель выберет свободный порт. Если у VPS есть отдельный сетевой фильтр, разрешите порт также в нём.</small></label>
               <div id="transportGuide" class="transport-guide wide"><a id="transportServiceLink" target="_blank" rel="noopener noreferrer"></a><small id="transportTip"></small></div>
               <label><span>Кодек</span><select id="codec"><option value="batched">Batched + zstd</option><option value="legacy">Legacy LZ4</option></select></label>
               <label><span>Исходящий IP <em>необязательно</em></span><input id="localIp" placeholder="автоопределение" autocomplete="off"></label>
-              <label class="wide"><span>Файл ключа шифрования <em>необязательно</em></span><input id="encryptionKey" placeholder="/etc/openflux-deploy/secret.key" autocomplete="off"><small>Одинаковый ключ должен быть установлен на сервере и клиенте.</small></label>
+              <label class="wide"><span>Ключ шифрования <em>необязательно</em></span><input id="encryptionKey" placeholder="Создастся автоматически или вставьте ключ из клиента" autocomplete="off"><small>Пустое поле — панель создаст ключ. Можно вставить готовый ключ из клиента или указать абсолютный путь к файлу на сервере. Ключ панели копируется из карточки подключения.</small></label>
             </div>
             <label class="check"><input id="sessionMode" type="checkbox"><span>Защищённая сессия OpenFlux 0.0.5 · несколько транспортов и автоматическое переключение</span></label>
+            <div id="directSetupNotice" class="direct-setup-notice hidden"><strong>Docker ещё не подготовлен для Direct.</strong> Порты задаются при создании контейнера. Один раз запустите обновлённый установщик на VPS; затем панель будет выбирать порт сама. <button id="copyDirectSetup" class="secondary small" type="button">Скопировать команду</button></div>
             <div id="sessionOptions" class="session-options hidden">
               <p>Требуются Batched, общий ключ шифрования и клиент с поддержкой <code>--negotiate</code>. Нынешние мобильные сборки могут не поддерживать этот режим. Не переключайте работающее подключение, пока не проверите клиент.</p>
-              <div id="directSetupNotice" class="direct-setup-notice hidden"><strong>Docker ещё не подготовлен для Direct.</strong> Порты задаются при создании контейнера. Один раз запустите обновлённый установщик на VPS; затем панель будет выбирать порт сама. <button id="copyDirectSetup" class="secondary small" type="button">Скопировать команду</button></div>
               <div id="sessionTransportRows" class="session-transport-rows"></div>
               <button id="addSessionTransport" class="secondary small" type="button">+ Добавить транспорт</button>
               <div class="form-grid">

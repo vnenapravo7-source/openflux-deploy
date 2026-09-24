@@ -7,6 +7,9 @@ WORKDIR /src
 RUN git init -q . && git remote add origin "$OPENFLUX_UPSTREAM_REPO" && \
     git fetch --quiet --depth 1 origin "$OPENFLUX_UPSTREAM_REVISION" && \
     git checkout --quiet --detach FETCH_HEAD
+COPY source/deploy/patch-upstream.sh /tmp/deploy/patch-upstream.sh
+COPY source/deploy/patches/ /tmp/deploy/patches/
+RUN sh /tmp/deploy/patch-upstream.sh /src
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/openflux . && git rev-parse HEAD >/out/upstream-version
 
@@ -25,6 +28,8 @@ COPY --from=openflux-build /out/upstream-version /usr/local/lib/openflux-deploy/
 COPY --from=panel-build /out/openflux-panel /usr/local/lib/openflux-deploy/openflux-panel.seed
 COPY --from=panel-build /out/panel-revision /usr/local/lib/openflux-deploy/panel-revision.seed
 COPY update.sh /usr/local/lib/openflux-deploy/update.sh
+COPY patch-upstream.sh /usr/local/lib/openflux-deploy/patch-upstream.sh
+COPY patches/ /usr/local/lib/openflux-deploy/patches/
 COPY panel-update.sh /usr/local/lib/openflux-deploy/panel-update.sh
 COPY entrypoint.sh /usr/local/bin/openflux-entrypoint
 RUN chmod 755 /usr/local/bin/openflux-entrypoint /usr/local/lib/openflux-deploy/update.sh /usr/local/lib/openflux-deploy/panel-update.sh

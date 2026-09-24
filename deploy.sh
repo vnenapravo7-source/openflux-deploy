@@ -173,6 +173,7 @@ install_systemd(){
   local upstream_tmp upstream_src
   upstream_tmp="$(mktemp -d)"; upstream_src="$upstream_tmp/source"
   git clone --quiet --depth 1 --single-branch --branch main "$UPSTREAM_REPO" "$upstream_src"
+  sh "$PREFIX/source/deploy/patch-upstream.sh" "$upstream_src"
   install_go "$upstream_src"
   say "Собираю OpenFlux и панель"
   install -d -m 755 "$STATE_DIR/bin" /usr/local/lib/openflux-deploy
@@ -189,6 +190,9 @@ install_systemd(){
   git -C "$upstream_src" rev-parse HEAD >"$STATE_DIR/upstream-version"
   rm -rf "$upstream_tmp"
   install -m 755 "$PREFIX/source/deploy/update.sh" /usr/local/lib/openflux-deploy/update.sh
+  install -m 755 "$PREFIX/source/deploy/patch-upstream.sh" /usr/local/lib/openflux-deploy/patch-upstream.sh
+  install -d /usr/local/lib/openflux-deploy/patches
+  install -m 644 "$PREFIX/source/deploy/patches/0001-preserve-conf-transport-urls.patch" /usr/local/lib/openflux-deploy/patches/
   install -m 755 "$PREFIX/source/deploy/panel-update.sh" /usr/local/lib/openflux-deploy/panel-update.sh
   printf 'systemd\n' >"$CONFIG_DIR/install-mode"
   cat >/etc/systemd/system/openflux-panel.service <<EOF
@@ -251,6 +255,9 @@ install_docker(){
   cp "$PREFIX/source/deploy/entrypoint.sh" "$PREFIX/entrypoint.sh"
   cp "$PREFIX/source/deploy/update.sh" "$PREFIX/update.sh"
   cp "$PREFIX/source/deploy/panel-update.sh" "$PREFIX/panel-update.sh"
+  cp "$PREFIX/source/deploy/patch-upstream.sh" "$PREFIX/patch-upstream.sh"
+  install -d "$PREFIX/patches"
+  cp "$PREFIX/source/deploy/patches/0001-preserve-conf-transport-urls.patch" "$PREFIX/patches/"
   if [ "$EXISTING_USERS" -eq 0 ]; then cat >"$PREFIX/.env" <<EOF
 OPENFLUX_PORT=$PORT
 OPENFLUX_ADMIN_USER=$(escape_env "$ADMIN_USER")

@@ -10,6 +10,7 @@
 .connection-url{font-size:11px;color:#a9b6c4;overflow-wrap:anywhere;margin:15px 0}.connection-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:15px}
 .danger{border:1px solid #71383e;background:#241417;color:#ffb5bd;border-radius:9px;cursor:pointer}.danger:hover{background:#35191d}
 .client-code{display:grid;gap:10px;border:1px solid #315545;background:#10231d;border-radius:9px;padding:14px;margin-top:15px}.client-code small{color:#8be4be}.client-code code{font:12px/1.5 ui-monospace,Consolas,monospace;overflow-wrap:anywhere;color:#e7fff4}.client-code button{justify-self:start}.client-code span{font-size:11px;color:var(--muted)}
+.connection-key{display:grid;gap:8px;border:1px solid #315545;background:#10231d;border-radius:9px;padding:14px;margin-top:15px}.connection-key small{color:#8be4be}.connection-key code{font:12px/1.5 ui-monospace,Consolas,monospace;overflow-wrap:anywhere;color:#e7fff4}
 .maintenance{margin-top:12px}.maintenance .check{margin:0}.form-card{margin-top:12px}#logConnection{width:auto;min-width:140px;padding:8px}.clients button{margin-top:9px}
 @media(max-width:750px){.connection-main,.user-row{align-items:flex-start;flex-direction:column}.connection-main .status{max-width:100%}.header-actions{flex-wrap:wrap}.clients{display:grid;margin-top:10px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:450px){.stats{grid-template-columns:1fr}header{gap:12px;flex-direction:column}.connection-actions button{flex:1}}

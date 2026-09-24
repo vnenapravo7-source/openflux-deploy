@@ -50,6 +50,8 @@ jobs:
           mkdir -p /tmp/openflux-docker/source
           cp -a . /tmp/openflux-docker/source/
           cp deploy/Dockerfile deploy/docker-compose.yml deploy/entrypoint.sh deploy/update.sh deploy/panel-update.sh /tmp/openflux-docker/
+          cp deploy/patch-upstream.sh /tmp/openflux-docker/
+          cp -a deploy/patches /tmp/openflux-docker/
       - name: Build image
         working-directory: /tmp/openflux-docker
         run: |

@@ -1,0 +1,10 @@
+diff --git a/transport_spec.go b/transport_spec.go
+--- a/transport_spec.go
++++ b/transport_spec.go
+@@ -51,5 +51,5 @@ func buildTransportSpecs(specs []transportSpec, urls map[string]string, extra map[string]map[string]interface{}) []transportSpec {
+ 	for i := range specs {
+-		if u, ok := urls[specs[i].Type]; ok {
++		if u, ok := urls[specs[i].Type]; ok && u != "" {
+ 			specs[i].URL = u
+ 		}
+ 		if p, ok := extra[specs[i].Type]; ok {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
@@ -54,6 +55,7 @@ type Connection struct {
 
 type ConnectionView struct {
 	Connection
+	KeyManaged bool `json:"key_managed"`
 	Running    bool     `json:"running"`
 	PID        int      `json:"pid"`
 	Uptime     int64    `json:"uptime"`
@@ -135,7 +137,7 @@ func defaults() Config { return Config{Transport: "yandex", Mode: "l4", Codec: "
 
 func validateConfig(c Config) error {
 	switch c.Transport {
-	case "yandex", "vyandex", "boards", "mailru", "cupsonline":
+	case "yandex", "vyandex", "boards", "mailru", "cupsonline", "direct":
 	default:
 		return fmt.Errorf("unsupported transport %q", c.Transport)
 	}
@@ -150,12 +152,16 @@ func validateConfig(c Config) error {
 	}
 	if len(c.Transports) == 0 {
 		if c.DirectListen != "" || c.MaxPacketSize != 0 {
-			return fmt.Errorf("session settings require at least one transport")
+			if c.Transport != "direct" || c.MaxPacketSize != 0 { return fmt.Errorf("session settings require at least one transport") }
+		}
+		if c.Transport == "direct" {
+			if c.DirectListen != "" { return validateDirectListen(c.DirectListen) }
+			return nil
 		}
 		return validateTransportURL(c.Transport, c.URL, c.Enabled)
 	}
-	if c.Codec != "batched" || strings.TrimSpace(c.EncryptionKeyFile) == "" {
-		return fmt.Errorf("authenticated session requires batched codec and an encryption key file")
+	if c.Codec != "batched" {
+		return fmt.Errorf("authenticated session requires batched codec")
 	}
 	if c.MaxPacketSize != 0 && (c.MaxPacketSize < 1280 || c.MaxPacketSize > 65000) {
 		return fmt.Errorf("maximum packet size must be 1280–65000")
@@ -171,7 +177,7 @@ func validateConfig(c Config) error {
 		default:
 			return fmt.Errorf("unsupported session transport %q", link.Type)
 		}
-		if seen[link.Type] {
+		if seen[link.Type] && (link.Type == "direct" || link.Type == "cupsonline") {
 			return fmt.Errorf("transport %q appears more than once", link.Type)
 		}
 		seen[link.Type] = true
@@ -188,6 +194,7 @@ func validateConfig(c Config) error {
 		if err := validateTransportURL(link.Type, link.URL, c.Enabled); err != nil {
 			return err
 		}
+		if strings.ContainsAny(link.URL, "#;\n\r") { return fmt.Errorf("transport URL contains characters unsupported by OpenFlux config") }
 	}
 	if direct {
 		if c.DirectListen != "" {
@@ -231,6 +238,7 @@ func validateDirectListen(value string) error {
 }
 
 func usesDirect(c Config) bool {
+	if c.Transport == "direct" && len(c.Transports) == 0 { return true }
 	for _, link := range c.Transports {
 		if link.Type == "direct" {
 			return true
@@ -282,12 +290,19 @@ func NewManager(legacyPath, connectionsPath, nodesPath, binaryPath, versionPath,
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	for _, c := range m.connections {
-		if err := validateConnection(c); err != nil {
+	migratedKeys := false
+	for i := range m.connections {
+		c := &m.connections[i]
+		if c.EncryptionKeyFile != "" && !filepath.IsAbs(c.EncryptionKeyFile) {
+			if _, err := prepareKey(c, nil); err != nil { return nil, fmt.Errorf("migrate key for %s: %w", c.ID, err) }
+			migratedKeys = true
+		}
+		if err := validateConnection(*c); err != nil {
 			return nil, fmt.Errorf("connection %s: %w", c.ID, err)
 		}
 		m.processes[c.ID] = &processState{}
 	}
+	if migratedKeys { if err := writeJSONFile(connectionsPath, m.connections); err != nil { return nil, err } }
 	if raw, err := os.ReadFile(nodesPath); err == nil {
 		if err := json.Unmarshal(raw, &m.nodes); err != nil {
 			return nil, fmt.Errorf("nodes file: %w", err)
@@ -344,23 +359,14 @@ func connectionArgs(c Connection) []string {
 	args := []string{"--role=exit", "--mode=" + c.Mode, "--codec=" + c.Codec}
 	if len(c.Transports) == 0 {
 		args = append(args, "--transport="+c.Transport)
+		if c.Transport == "direct" { args = append(args, "--direct-listen="+c.DirectListen) }
 		if c.URL != "" {
 			args = append(args, "--url="+c.URL)
 		}
 	} else {
-		list := make([]string, 0, len(c.Transports))
-		for _, link := range c.Transports {
-			list = append(list, fmt.Sprintf("%s:%d", link.Type, link.Priority))
-			if link.URL != "" {
-				args = append(args, "--"+link.Type+"-url="+link.URL)
-			}
-		}
-		args = append(args, "--transports="+strings.Join(list, ","), "--negotiate")
+		args = append(args, "--config="+sessionConfigPath(c.ID), "--negotiate")
 		if c.MaxPacketSize != 0 {
 			args = append(args, fmt.Sprintf("--max-packet-size=%d", c.MaxPacketSize))
-		}
-		if c.DirectListen != "" {
-			args = append(args, "--direct-listen="+c.DirectListen)
 		}
 		args = append(args, "--cookie-store="+filepath.Join(env("OPENFLUX_STATE_DIR", "/var/lib/openflux-deploy"), "cookies-"+c.ID+".json"))
 	}
@@ -374,6 +380,71 @@ func connectionArgs(c Connection) []string {
 		args = append(args, "--debug")
 	}
 	return args
+}
+
+func managedKeyPath(id string) string {
+	return filepath.Join(env("OPENFLUX_STATE_DIR", "/var/lib/openflux-deploy"), "keys", id+".key")
+}
+
+func sessionConfigPath(id string) string {
+	return filepath.Join(env("OPENFLUX_STATE_DIR", "/var/lib/openflux-deploy"), "sessions", id+".conf")
+}
+
+func writePrivateFile(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil { return err }
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".openflux-*")
+	if err != nil { return err }
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0600); err != nil { tmp.Close(); return err }
+	if _, err := tmp.Write(data); err != nil { tmp.Close(); return err }
+	if err := tmp.Close(); err != nil { return err }
+	return os.Rename(tmp.Name(), path)
+}
+
+func prepareKey(c *Connection, previous *Connection) (bool, error) {
+	if c.EncryptionKeyFile != "" && !filepath.IsAbs(c.EncryptionKeyFile) {
+		if len(c.EncryptionKeyFile) > 4096 || strings.ContainsAny(c.EncryptionKeyFile, "\r\n") { return false, fmt.Errorf("invalid encryption key") }
+		path := managedKeyPath(c.ID)
+		if err := writePrivateFile(path, []byte(c.EncryptionKeyFile+"\n")); err != nil { return false, err }
+		c.EncryptionKeyFile = path
+		return true, nil
+	}
+	if !c.Enabled || (c.Transport != "direct" && len(c.Transports) == 0) || c.EncryptionKeyFile != "" { return false, nil }
+	if previous != nil && previous.EncryptionKeyFile != "" {
+		c.EncryptionKeyFile = previous.EncryptionKeyFile
+		return false, nil
+	}
+	var secret [32]byte
+	if _, err := rand.Read(secret[:]); err != nil { return false, err }
+	path := managedKeyPath(c.ID)
+	if err := writePrivateFile(path, []byte(hex.EncodeToString(secret[:])+"\n")); err != nil { return false, err }
+	c.EncryptionKeyFile = path
+	return true, nil
+}
+
+func (m *Manager) connectionKey(id string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	i, ok := m.findLocked(id)
+	if !ok { return "", os.ErrNotExist }
+	if m.connections[i].EncryptionKeyFile != managedKeyPath(id) { return "", fmt.Errorf("key is not managed by the panel") }
+	raw, err := os.ReadFile(managedKeyPath(id))
+	if err != nil { return "", err }
+	return strings.TrimSpace(string(raw)), nil
+}
+
+func writeSessionConfig(c Connection) error {
+	var b strings.Builder
+	counts := map[string]int{}
+	for _, link := range c.Transports {
+		counts[link.Type]++
+		name := link.Type
+		if counts[link.Type] > 1 { name = fmt.Sprintf("%s-%d", link.Type, counts[link.Type]) }
+		fmt.Fprintf(&b, "[Transport \"%s\"]\nType = %s\nPriority = %d\n", name, link.Type, link.Priority)
+		if link.Type == "direct" { fmt.Fprintf(&b, "Listen = %s\n", c.DirectListen) } else { fmt.Fprintf(&b, "URL = %s\n", link.URL) }
+		b.WriteByte('\n')
+	}
+	return writePrivateFile(sessionConfigPath(c.ID), []byte(b.String()))
 }
 
 func (m *Manager) startLocked(id string) error {
@@ -396,9 +467,10 @@ func (m *Manager) startLocked(id string) error {
 	}
 	if len(c.Transports) > 0 {
 		help, err := exec.Command(m.binaryPath, "--help").CombinedOutput()
-		if err != nil || !strings.Contains(string(help), "--transports=") {
+		if err != nil || !strings.Contains(string(help), "--config=") {
 			return fmt.Errorf("this server binary does not support authenticated multi-transport sessions; update the server first")
 		}
+		if err := writeSessionConfig(c); err != nil { return err }
 	}
 	cmd := exec.Command(m.binaryPath, connectionArgs(c)...)
 	pipe, err := cmd.StdoutPipe()
@@ -557,8 +629,11 @@ func (m *Manager) addConnection(c Connection) (Connection, error) {
 	if err := m.prepareDirectLocked("", &c); err != nil {
 		return Connection{}, err
 	}
+	generated, err := prepareKey(&c, nil)
+	if err != nil { return Connection{}, err }
 	next := append(append([]Connection(nil), m.connections...), c)
 	if err := writeJSONFile(m.connectionsPath, next); err != nil {
+		if generated { _ = os.Remove(managedKeyPath(c.ID)) }
 		return Connection{}, err
 	}
 	m.connections = next
@@ -579,13 +654,17 @@ func (m *Manager) updateConnection(id string, c Connection) error {
 	if !ok {
 		return os.ErrNotExist
 	}
+	previous := m.connections[i]
+	c.ID, c.OwnerID, c.AutoUpdate = id, previous.OwnerID, false
 	if err := m.prepareDirectLocked(id, &c); err != nil {
 		return err
 	}
-	c.ID, c.OwnerID, c.AutoUpdate = id, m.connections[i].OwnerID, false
+	generated, err := prepareKey(&c, &previous)
+	if err != nil { return err }
 	next := append([]Connection(nil), m.connections...)
 	next[i] = c
 	if err := writeJSONFile(m.connectionsPath, next); err != nil {
+		if generated { _ = os.Remove(managedKeyPath(id)) }
 		return err
 	}
 	m.connections = next
@@ -677,7 +756,7 @@ func (m *Manager) connectionViews(user User) []ConnectionView {
 		if user.Role != "admin" && c.OwnerID != user.ID {
 			continue
 		}
-		v := ConnectionView{Connection: c, Logs: []string{}}
+		v := ConnectionView{Connection: c, Logs: []string{}, KeyManaged: c.EncryptionKeyFile != "" && c.EncryptionKeyFile == managedKeyPath(c.ID)}
 		if p := m.processes[c.ID]; p != nil {
 			v.Restarts, v.LastError, v.Logs, v.ClientCode = p.restarts, p.lastError, append([]string{}, p.logs...), p.clientCode
 			if p.cmd != nil {

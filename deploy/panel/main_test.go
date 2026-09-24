@@ -31,7 +31,9 @@ func TestValidateConfig(t *testing.T) {
 		{"bad scheme", Config{Enabled: true, Transport: "mailru", URL: "file:///etc/passwd", Mode: "l3", Codec: "batched"}, false},
 		{"unknown transport", Config{Transport: "other", Mode: "l3", Codec: "batched"}, false},
 		{"authenticated session", Config{Enabled: true, Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/etc/openflux-deploy/key", Transports: []TransportLink{{Type: "yandex", URL: "https://docs.yandex.ru/example", Priority: 50}, {Type: "direct", Priority: 100}}, DirectListen: ":39000", MaxPacketSize: 1500}, true},
-		{"session without key", Config{Transport: "yandex", Mode: "l4", Codec: "batched", Transports: []TransportLink{{Type: "direct", Priority: 100}}, DirectListen: ":39000"}, false},
+		{"session without key", Config{Transport: "yandex", Mode: "l4", Codec: "batched", Transports: []TransportLink{{Type: "direct", Priority: 100}}, DirectListen: ":39000"}, true},
+		{"standalone direct", Config{Enabled: true, Transport: "direct", Mode: "l4", Codec: "batched"}, true},
+		{"duplicate documents", Config{Enabled: true, Transport: "yandex", Mode: "l4", Codec: "batched", Transports: []TransportLink{{Type: "yandex", URL: "https://disk.yandex.ru/i/one", Priority: 50}, {Type: "yandex", URL: "https://disk.yandex.ru/i/two", Priority: 50}}}, true},
 		{"session legacy codec", Config{Transport: "yandex", Mode: "l4", Codec: "legacy", EncryptionKeyFile: "/key", Transports: []TransportLink{{Type: "direct", Priority: 100}}, DirectListen: ":39000"}, false},
 		{"session duplicate transport", Config{Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/key", Transports: []TransportLink{{Type: "direct", Priority: 100}, {Type: "direct", Priority: 50}}, DirectListen: ":39000"}, false},
 		{"session invalid packet size", Config{Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/key", Transports: []TransportLink{{Type: "direct", Priority: 100}}, DirectListen: ":39000", MaxPacketSize: 1000}, false},
@@ -73,7 +75,7 @@ func TestBoardConnectionArgs(t *testing.T) {
 func TestAuthenticatedConnectionArgs(t *testing.T) {
 	c := Connection{ID: "example", Config: Config{Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/etc/openflux-deploy/key", Transports: []TransportLink{{Type: "direct", Priority: 100}, {Type: "yandex", URL: "https://docs.yandex.ru/example", Priority: 50}}, DirectListen: ":39000", MaxPacketSize: 1500}}
 	args := strings.Join(connectionArgs(c), " ")
-	for _, expected := range []string{"--transports=direct:100,yandex:50", "--negotiate", "--direct-listen=:39000", "--yandex-url=https://docs.yandex.ru/example", "--max-packet-size=1500", "--cookie-store="} {
+	for _, expected := range []string{"--config=", "--negotiate", "--max-packet-size=1500", "--cookie-store="} {
 		if !strings.Contains(args, expected) {
 			t.Fatalf("missing %s in %s", expected, args)
 		}
@@ -81,6 +83,33 @@ func TestAuthenticatedConnectionArgs(t *testing.T) {
 	if strings.Contains(args, "--url=") {
 		t.Fatalf("session must not set legacy URL (changes handshake context): %s", args)
 	}
+}
+
+func TestNamedSessionConfigAndManagedKey(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("OPENFLUX_STATE_DIR", dir)
+	c := Connection{ID: "example", Config: Config{Enabled: true, Transport: "yandex", Mode: "l4", Codec: "batched", Transports: []TransportLink{{Type: "yandex", URL: "https://disk.yandex.ru/i/one", Priority: 50}, {Type: "yandex", URL: "https://disk.yandex.ru/i/two", Priority: 75}, {Type: "mailru", URL: "https://cloud.mail.ru/public/three", Priority: 25}}}}
+	created, err := prepareKey(&c, nil)
+	if err != nil || !created { t.Fatalf("prepare key: %v", err) }
+	if err := writeSessionConfig(c); err != nil { t.Fatal(err) }
+	raw, err := os.ReadFile(sessionConfigPath(c.ID))
+	if err != nil { t.Fatal(err) }
+	for _, want := range []string{"[Transport \"yandex\"]", "[Transport \"yandex-2\"]", "URL = https://disk.yandex.ru/i/one", "URL = https://disk.yandex.ru/i/two", "[Transport \"mailru\"]"} {
+		if !strings.Contains(string(raw), want) { t.Fatalf("missing %q in config %s", want, raw) }
+	}
+	m := &Manager{connections: []Connection{c}}
+	key, err := m.connectionKey(c.ID)
+	if err != nil || len(key) != 64 { t.Fatalf("managed key: %q, %v", key, err) }
+}
+
+func TestPastedEncryptionKeyIsStoredAsFile(t *testing.T) {
+	t.Setenv("OPENFLUX_STATE_DIR", t.TempDir())
+	c := Connection{ID: "pasted", Config: Config{Enabled: true, Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "client-secret-value", Transports: []TransportLink{{Type: "direct", Priority: 50}}}}
+	created, err := prepareKey(&c, nil)
+	if err != nil || !created { t.Fatalf("prepare pasted key: %v", err) }
+	if c.EncryptionKeyFile != managedKeyPath(c.ID) { t.Fatalf("key path: %q", c.EncryptionKeyFile) }
+	raw, err := os.ReadFile(c.EncryptionKeyFile)
+	if err != nil || strings.TrimSpace(string(raw)) != "client-secret-value" { t.Fatalf("stored key: %v", err) }
 }
 
 func TestTailFile(t *testing.T) {

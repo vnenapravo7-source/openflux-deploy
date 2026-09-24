@@ -79,6 +79,7 @@ say "building upstream $LATEST"
 git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_REPO" "$TMP/src"
 git -C "$TMP/src" fetch --quiet --depth 1 origin "$LATEST"
 git -C "$TMP/src" checkout --quiet --detach FETCH_HEAD
+sh /usr/local/lib/openflux-deploy/patch-upstream.sh "$TMP/src"
 (cd "$TMP/src" && GOTOOLCHAIN=auto go build -trimpath -ldflags='-s -w' -o "$TMP/openflux" .)
 "$TMP/openflux" --help >/dev/null 2>&1
 
@@ -107,4 +108,3 @@ if ! check_health; then
   fi
 fi
 say "health check passed"
-
