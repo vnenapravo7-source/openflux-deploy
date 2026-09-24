@@ -132,6 +132,7 @@ function render(){
     $("#offerServerUpdate").classList.toggle("hidden",!serverNew);$("#offerPanelUpdate").classList.toggle("hidden",!panelNew);
     $("#offerServerUpdate").disabled=busy||!!state.checking_versions;$("#offerPanelUpdate").disabled=busy||!!state.checking_versions;
     $("#serverUpdateStatus").textContent=state.update_error||(state.updating?(state.server_action==="rollback"?"Откатываем серверную часть…":"Обновляем серверную часть…"):(state.server_action==="rollback"?"Откат завершён; автообновление сервера выключено.":state.version_check_error||""));
+    const serverUpdateLog=$("#serverUpdateLog");serverUpdateLog.textContent=state.server_update_log||"";serverUpdateLog.classList.toggle("hidden",!state.server_update_log);
     $("#panelUpdateStatus").textContent=state.panel_update_error||(state.updating_panel?(state.panel_action==="rollback"?"Откатываем панель; она будет перезапущена…":"Панель обновляется; ход работы показан ниже…"):"");
     const updateLog=$("#panelUpdateLog");updateLog.textContent=state.panel_update_log||"";updateLog.classList.toggle("hidden",!state.panel_update_log);
     drawChart(state.traffic||[]);renderNodes(state.nodes||[]);maybeOfferUpdates(serverNew,panelNew)
@@ -214,4 +215,3 @@ $("#showAddNode").onclick=()=>$("#nodeForm").classList.remove("hidden");$("#canc
 $("#nodeForm").onsubmit=async event=>{event.preventDefault();try{await api("/api/nodes",{method:"POST",...json({name:$("#nodeName").value.trim(),base_url:$("#nodeUrl").value.trim(),token:$("#nodeToken").value,tls_sha256:$("#nodeFingerprint").value.trim()})});event.target.reset();event.target.classList.add("hidden");toast("Нода подключена");await refresh()}catch(e){toast(e.message,true)}};
 addEventListener("resize",()=>state?.me.role==="admin"&&drawChart(state.traffic||[]));
 refresh().then(()=>{if(state?.me.role==="admin"){loadUsers();pendingUpdatePrompt=true;checkUpdates(true)}});setInterval(()=>{if(state)refresh()},5000);
-
