@@ -2,6 +2,7 @@ const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const names = {yandex:"Yandex Docs",vyandex:"Yandex Volga",boards:"Yandex Board",mailru:"Mail.ru Docs",cupsonline:"Cups.online"};
 let state = null, users = [], editing = null, editingUser = null, editUserAction = "", selectedLog = "", activeView = "overview";
+let pendingUpdatePrompt=false, shownUpdateSignature="", currentUpdateSignature="";
 
 async function api(path, options={}) {
   const response = await fetch(path, {credentials:"same-origin",...options,headers:{"X-OpenFlux-Action":"1",...(options.headers||{})}});
@@ -14,7 +15,7 @@ const esc = value => { const div=document.createElement("div"); div.textContent=
 const bytes = (input=0) => { let n=Number(input)||0, i=0; const unit=["Б","КБ","МБ","ГБ"]; while(n>=1024&&i<3){n/=1024;i++} return `${n.toFixed(i?1:0)} ${unit[i]}`; };
 const duration = input => { const s=Number(input)||0,d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60); return d?`${d} д ${h} ч`:h?`${h} ч ${m} мин`:`${m} мин`; };
 function toast(message,error=false){const el=$("#toast");el.textContent=message;el.className=error?"show error":"show";setTimeout(()=>el.className="",3500)}
-function showLogin(){state=null;navigate("overview");$("#appShell").classList.add("hidden");$("#loginScreen").classList.remove("hidden");}
+function showLogin(){state=null;pendingUpdatePrompt=false;shownUpdateSignature="";$("#updateModal").classList.add("hidden");navigate("overview");$("#appShell").classList.add("hidden");$("#loginScreen").classList.remove("hidden");}
 function showApp(){ $("#loginScreen").classList.add("hidden");$("#appShell").classList.remove("hidden"); }
 function navigate(view){
   if(state?.me.role!=="admin"&&(view==="users"||view==="nodes"))view="overview";
@@ -69,6 +70,28 @@ function renderUsers(){
   $("#usersList").innerHTML=users.map(u=>`<div class="user-row"><div><b>${esc(u.username)}</b><small>${u.role==="admin"?"Администратор":"Пользователь"} · ${state.connections.filter(c=>c.owner_id===u.id).length} подключений</small></div><div class="header-actions">${u.id===state.me.id?`<button class="secondary small" data-user-action="self" data-id="${esc(u.id)}">Мой профиль</button>`:`<button class="secondary small" data-user-action="username" data-id="${esc(u.id)}">Изменить логин</button><button class="secondary small" data-user-action="password" data-id="${esc(u.id)}">Сменить пароль</button><button class="danger small" data-user-action="delete" data-id="${esc(u.id)}">Удалить</button>`}</div></div>`).join("");
   $("#connectionOwner").innerHTML=users.map(u=>`<option value="${esc(u.id)}">${esc(u.username)}</option>`).join("");
 }
+function maybeOfferUpdates(serverNew,panelNew){
+  if(!pendingUpdatePrompt||state.checking_versions||!state.last_version_check)return;
+  pendingUpdatePrompt=false;
+  if(!serverNew&&!panelNew)return;
+  const signature=`${serverNew?state.latest_upstream:""}|${panelNew?state.latest_panel:""}`;
+  const key=`openflux-update-reminder:${state.me.id}`;
+  try{if(localStorage.getItem(key)===signature)return}catch(_){}
+  if(shownUpdateSignature===signature)return;
+  shownUpdateSignature=currentUpdateSignature=signature;
+  $("#updateModalText").textContent=serverNew&&panelNew?"Есть новые версии серверной части и панели. Что обновить сейчас?":serverNew?"Доступна новая версия серверной части.":"Доступна новая версия панели.";
+  $("#modalServerUpdate").classList.toggle("hidden",!serverNew);
+  $("#modalPanelUpdate").classList.toggle("hidden",!panelNew);
+  $("#suppressUpdateReminder").checked=false;
+  $("#updateModal").classList.remove("hidden");
+  $("#dismissUpdateModal").focus();
+}
+function dismissUpdateModal(){
+  if($("#suppressUpdateReminder").checked&&state?.me?.id){
+    try{localStorage.setItem(`openflux-update-reminder:${state.me.id}`,currentUpdateSignature)}catch(_){}
+  }
+  $("#updateModal").classList.add("hidden");
+}
 async function loadUsers(){if(state?.me.role!=="admin")return;try{users=await api("/api/users");renderUsers();renderConnections();}catch(e){toast(e.message,true)}}
 function openUserEditor(user,action){
   editingUser=user.id;editUserAction=action;
@@ -90,7 +113,6 @@ function render(){
   if(admin){
     const point=(state.traffic||[]).at(-1)||{},busy=!!state.updating||!!state.updating_panel;
     $("#rxNow").textContent=`${bytes(point.rx)}/с`;$("#txNow").textContent=`${bytes(point.tx)}/с`;$("#autoUpdate").checked=!!state.auto_update;
-    $("#updateBtn").disabled=busy;$("#updatePanelBtn").disabled=busy;
     $("#rollbackServerBtn").disabled=busy||!state.server_rollback_available;
     $("#rollbackPanelBtn").disabled=busy||!state.panel_rollback_available;
     $("#rollbackHint").classList.toggle("hidden",!!state.rollback_capable);
@@ -99,6 +121,8 @@ function render(){
     $("#versionCheckStatus").textContent=state.checking_versions?"Проверяю версии сервера и панели…":state.version_check_error?`Ошибка проверки: ${state.version_check_error}`:state.last_version_check?`Проверено: ${new Date(state.last_version_check).toLocaleString("ru-RU")}. ${state.latest_upstream&&state.latest_panel?"Результаты ниже.":"Не удалось получить все версии."}`:"Версии ещё не проверены";
     const serverNew=!!state.latest_upstream&&state.latest_upstream!==state.upstream_version;
     const panelNew=!!state.latest_panel&&state.latest_panel!==state.panel_revision;
+    $("#updateBtn").disabled=busy||!!state.checking_versions||!serverNew;
+    $("#updatePanelBtn").disabled=busy||!!state.checking_versions||!panelNew;
     $("#serverVersionStatus").textContent=state.latest_upstream?`Последняя ревизия: ${state.latest_upstream.slice(0,8)}${serverNew?" · доступно обновление":" · актуально"}`:"";
     $("#panelVersionStatus").textContent=state.latest_panel?`Последняя ревизия: ${state.latest_panel.slice(0,8)}${panelNew?" · доступно обновление":" · актуально"}`:"";
     $("#serverRollbackTarget").textContent=state.previous_server_revision&&state.previous_server_revision!=="unknown"?`Резервная версия: ${state.previous_server_revision.slice(0,8)}${state.previous_server_revision===state.upstream_version?" · совпадает с текущей":""}`:"Резервной версии пока нет";
@@ -106,11 +130,11 @@ function render(){
     $("#updateNotice").classList.toggle("hidden",!serverNew&&!panelNew);
     $("#updateNoticeText").textContent=serverNew&&panelNew?"Для сервера и панели доступны новые версии.":serverNew?"Доступна новая версия сервера.":"Доступна новая версия панели.";
     $("#offerServerUpdate").classList.toggle("hidden",!serverNew);$("#offerPanelUpdate").classList.toggle("hidden",!panelNew);
-    $("#offerServerUpdate").disabled=busy;$("#offerPanelUpdate").disabled=busy;
+    $("#offerServerUpdate").disabled=busy||!!state.checking_versions;$("#offerPanelUpdate").disabled=busy||!!state.checking_versions;
     $("#serverUpdateStatus").textContent=state.update_error||(state.updating?(state.server_action==="rollback"?"Откатываем серверную часть…":"Обновляем серверную часть…"):(state.server_action==="rollback"?"Откат завершён; автообновление сервера выключено.":state.version_check_error||""));
     $("#panelUpdateStatus").textContent=state.panel_update_error||(state.updating_panel?(state.panel_action==="rollback"?"Откатываем панель; она будет перезапущена…":"Панель обновляется; ход работы показан ниже…"):"");
     const updateLog=$("#panelUpdateLog");updateLog.textContent=state.panel_update_log||"";updateLog.classList.toggle("hidden",!state.panel_update_log);
-    drawChart(state.traffic||[]);renderNodes(state.nodes||[])
+    drawChart(state.traffic||[]);renderNodes(state.nodes||[]);maybeOfferUpdates(serverNew,panelNew)
   }
   else $("#updateNotice").classList.add("hidden");
   renderConnections();if(activeView==="users")renderUsers();
@@ -158,7 +182,7 @@ document.addEventListener("click",async event=>{
 });
 $("#logConnection").onchange=event=>{selectedLog=event.target.value;renderConnections()};
 $("#copyLogs").onclick=async()=>{try{await navigator.clipboard.writeText($("#logs").textContent);toast("Журнал скопирован")}catch(e){toast(e.message,true)}};
-$("#loginForm").onsubmit=async event=>{event.preventDefault();try{await api("/api/login",{method:"POST",...json({username:$("#loginName").value.trim(),password:$("#loginPassword").value})});$("#loginPassword").value="";$("#loginError").textContent="";await refresh();if(state?.me.role==="admin"){await loadUsers();checkUpdates()}}catch(e){$("#loginError").textContent=e.message}};
+$("#loginForm").onsubmit=async event=>{event.preventDefault();try{await api("/api/login",{method:"POST",...json({username:$("#loginName").value.trim(),password:$("#loginPassword").value})});$("#loginPassword").value="";$("#loginError").textContent="";await refresh();if(state?.me.role==="admin"){await loadUsers();pendingUpdatePrompt=true;checkUpdates(true)}}catch(e){$("#loginError").textContent=e.message}};
 $("#logoutBtn").onclick=async()=>{try{await api("/api/logout",{method:"POST"})}catch(_){}showLogin()};
 $("#userForm").onsubmit=async event=>{event.preventDefault();try{await api("/api/users",{method:"POST",...json({username:$("#userName").value.trim(),password:$("#userPassword").value,role:$("#userRole").value})});event.target.reset();toast("Пользователь создан");await loadUsers()}catch(e){toast(e.message,true)}};
 $("#cancelUserEdit").onclick=()=>$("#editUserForm").classList.add("hidden");
@@ -180,11 +204,14 @@ $("#updateBtn").onclick=async()=>{try{await api("/api/update",{method:"POST"});t
 $("#updatePanelBtn").onclick=async()=>{try{await api("/api/update-panel",{method:"POST"});toast("Обновление панели запущено. После перезапуска войдите снова.");await refresh()}catch(e){toast(e.message,true)}};
 $("#rollbackServerBtn").onclick=async()=>{if(!confirm("Откатить серверную часть на предыдущую версию? Автообновление будет выключено."))return;try{await api("/api/rollback-server",{method:"POST"});toast("Откат сервера запущен");await refresh()}catch(e){toast(e.message,true)}};
 $("#rollbackPanelBtn").onclick=async()=>{if(!confirm("Откатить панель на предыдущую версию? После перезапуска потребуется повторный вход."))return;try{await api("/api/rollback-panel",{method:"POST"});toast("Откат панели запущен");await refresh()}catch(e){toast(e.message,true)}};
-async function checkUpdates(force=false){if(state?.me.role!=="admin")return;try{await api(`/api/check-updates${force?"?force=1":""}`,{method:"POST"});if(force)toast("Проверка версий запущена; результат появится в разделе «Обслуживание».");await refresh()}catch(e){toast(`Проверка версий: ${e.message}`,true)}}
-$("#checkUpdatesBtn").onclick=()=>checkUpdates(true);
+async function checkUpdates(force=false,manual=false){if(state?.me.role!=="admin")return;try{await api(`/api/check-updates${force?"?force=1":""}`,{method:"POST"});if(manual)toast("Проверка версий запущена; результат появится в разделе «Обслуживание».");await refresh()}catch(e){pendingUpdatePrompt=false;toast(`Проверка версий: ${e.message}`,true)}}
+$("#checkUpdatesBtn").onclick=()=>checkUpdates(true,true);
+$("#dismissUpdateModal").onclick=dismissUpdateModal;
+$("#modalServerUpdate").onclick=()=>{dismissUpdateModal();$("#updateBtn").click()};
+$("#modalPanelUpdate").onclick=()=>{dismissUpdateModal();$("#updatePanelBtn").click()};
 $("#offerServerUpdate").onclick=()=>$("#updateBtn").click();$("#offerPanelUpdate").onclick=()=>$("#updatePanelBtn").click();
 $("#showAddNode").onclick=()=>$("#nodeForm").classList.remove("hidden");$("#cancelNode").onclick=()=>$("#nodeForm").classList.add("hidden");
 $("#nodeForm").onsubmit=async event=>{event.preventDefault();try{await api("/api/nodes",{method:"POST",...json({name:$("#nodeName").value.trim(),base_url:$("#nodeUrl").value.trim(),token:$("#nodeToken").value,tls_sha256:$("#nodeFingerprint").value.trim()})});event.target.reset();event.target.classList.add("hidden");toast("Нода подключена");await refresh()}catch(e){toast(e.message,true)}};
 addEventListener("resize",()=>state?.me.role==="admin"&&drawChart(state.traffic||[]));
-refresh().then(()=>{if(state?.me.role==="admin"){loadUsers();checkUpdates()}});setInterval(()=>{if(state)refresh()},5000);
+refresh().then(()=>{if(state?.me.role==="admin"){loadUsers();pendingUpdatePrompt=true;checkUpdates(true)}});setInterval(()=>{if(state)refresh()},5000);
 

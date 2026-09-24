@@ -123,12 +123,8 @@ func (m *Manager) checkVersions(force bool) {
 			}
 		}
 		m.mu.Lock()
-		if upstreamErr == nil {
-			m.latestUpstream = upstream
-		}
-		if panelErr == nil {
-			m.latestPanel = panel
-		}
+		m.latestUpstream = upstream
+		m.latestPanel = panel
 		var problems []string
 		if upstreamErr != nil {
 			problems = append(problems, "сервер: "+upstreamErr.Error())

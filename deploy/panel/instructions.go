@@ -227,8 +227,14 @@ func (s *InstructionStore) upload(w http.ResponseWriter, r *http.Request, replac
 		}
 	}
 gotFile:
-	if filePart == nil || fileName == "" || !validInstructionTitle(title) || len([]rune(fileName)) > 160 {
-		return InstructionBlock{}, fmt.Errorf("kind and a named file are required; title and file name may contain up to 160 characters")
+	if filePart == nil {
+		return InstructionBlock{}, fmt.Errorf("file field is missing from multipart upload")
+	}
+	if fileName == "" {
+		return InstructionBlock{}, fmt.Errorf("uploaded file has no name")
+	}
+	if !validInstructionTitle(title) || len([]rune(fileName)) > 160 {
+		return InstructionBlock{}, fmt.Errorf("title and file name may contain up to 160 characters")
 	}
 	var prefix [512]byte
 	n, err := io.ReadFull(filePart, prefix[:])
@@ -446,3 +452,4 @@ func (s *server) instructionAPI(w http.ResponseWriter, r *http.Request, user Use
 	}
 	http.NotFound(w, r)
 }
+

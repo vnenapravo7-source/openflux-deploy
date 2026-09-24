@@ -133,6 +133,14 @@
       <section id="view-logs" class="view"><article class="card logs-card"><div class="card-head"><div><h2>Журнал подключения</h2><p>Записи других пользователей недоступны</p></div><div class="header-actions"><select id="logConnection"></select><button id="copyLogs" class="secondary small">Копировать</button></div></div><pre id="logs">Выберите подключение…</pre></article></section>
     </main>
   </div>
+  <div id="updateModal" class="update-modal hidden" role="dialog" aria-modal="true" aria-labelledby="updateModalTitle">
+    <div class="update-modal-card">
+      <h2 id="updateModalTitle">Доступно обновление OpenFlux</h2>
+      <p id="updateModalText"></p>
+      <label class="check"><input id="suppressUpdateReminder" type="checkbox"><span>Не напоминать об этих версиях в этом браузере</span></label>
+      <div class="form-actions"><button id="dismissUpdateModal" class="secondary" type="button">Позже</button><button id="modalServerUpdate" class="primary hidden" type="button">Обновить сервер</button><button id="modalPanelUpdate" class="primary hidden" type="button">Обновить панель</button></div>
+    </div>
+  </div>
   <div id="toast" role="status"></div><script src="/app.js"></script><script src="/instructions.js"></script>
 </body>
 </html>

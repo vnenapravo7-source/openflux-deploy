@@ -85,7 +85,14 @@ $("#cancelMediaBlock").onclick=()=>{$("#instructionUploadForm").classList.add("h
 $("#instructionKind").onchange=()=>{$("#instructionFile").accept={image:"image/jpeg,image/png,image/gif,image/webp",video:"video/mp4,video/webm,video/quicktime",file:""}[$("#instructionKind").value]};
 $("#instructionUploadForm").onsubmit=async event=>{event.preventDefault();
   const button=$("#uploadInstructionBtn");button.disabled=true;button.textContent="Загружаем…";
-  try{await api(editingMediaInstruction?`/api/instructions/${editingMediaInstruction}/asset`:"/api/instructions/upload",{method:editingMediaInstruction?"PUT":"POST",body:new FormData(event.target)});event.target.classList.add("hidden");editingMediaInstruction=null;toast("Файл сохранён в инструкциях");await loadInstructions()}
+  try{
+    const file=$("#instructionFile").files?.[0];
+    if(!file)throw new Error("Выберите файл для загрузки");
+    const payload=new FormData();
+    payload.append("kind",$("#instructionKind").value);
+    payload.append("title",$("#instructionMediaTitle").value.trim());
+    payload.append("file",file,file.name);
+    await api(editingMediaInstruction?`/api/instructions/${editingMediaInstruction}/asset`:"/api/instructions/upload",{method:editingMediaInstruction?"PUT":"POST",body:payload});event.target.classList.add("hidden");editingMediaInstruction=null;toast("Файл сохранён в инструкциях");await loadInstructions()}
   catch(e){toast(e.message,true)}finally{button.disabled=false;button.textContent=editingMediaInstruction?"Заменить файл":"Загрузить"}
 };
 document.addEventListener("click",async event=>{
@@ -102,3 +109,4 @@ document.addEventListener("click",async event=>{
     await loadInstructions()}
   catch(e){toast(e.message,true)}
 });
+
