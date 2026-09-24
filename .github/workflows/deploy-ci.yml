@@ -24,6 +24,10 @@ jobs:
       - name: Test panel
         working-directory: deploy/panel
         run: go test ./...
+      - name: Test panel JavaScript
+        run: |
+          node --check deploy/panel/static/app.js
+          node deploy/panel/ui_test.js
       - name: Build Linux binaries
         run: |
           CGO_ENABLED=0 go build -trimpath -o /tmp/openflux .
@@ -49,3 +53,6 @@ jobs:
       - name: Build image
         working-directory: /tmp/openflux-docker
         run: docker build -t openflux-deploy:ci .
+      - name: Validate Compose port mapping
+        working-directory: /tmp/openflux-docker
+        run: OPENFLUX_ADMIN_PASSWORD=test OPENFLUX_NODE_TOKEN=test docker compose config --quiet

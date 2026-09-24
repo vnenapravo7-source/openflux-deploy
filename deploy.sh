@@ -128,7 +128,7 @@ JSON
 
 install_go(){
   local version arch json sha file tmp
-  version="$(awk '/^go /{print $2;exit}' "$PREFIX/source/go.mod")"
+  version="$(awk '/^go /{print $2;exit}' "${1:-$PREFIX/source}/go.mod")"
   arch="$(uname -m)"; case "$arch" in x86_64) arch=amd64;; aarch64|arm64) arch=arm64;; *) fail "архитектура $arch не поддерживается";; esac
   if have go && go version 2>/dev/null | grep -q "go${version}"; then return; fi
   say "Устанавливаю Go $version с проверкой SHA-256"
@@ -170,10 +170,13 @@ EOF
 
 install_systemd(){
   [ -d /run/systemd/system ] || fail "systemd не найден; используйте --mode docker"
-  install_go
+  local upstream_tmp upstream_src
+  upstream_tmp="$(mktemp -d)"; upstream_src="$upstream_tmp/source"
+  git clone --quiet --depth 1 --single-branch --branch main "$UPSTREAM_REPO" "$upstream_src"
+  install_go "$upstream_src"
   say "Собираю OpenFlux и панель"
   install -d -m 755 "$STATE_DIR/bin" /usr/local/lib/openflux-deploy
-  (cd "$PREFIX/source" && GOTOOLCHAIN=auto go build -trimpath -ldflags='-s -w' -o "$STATE_DIR/bin/openflux.new" .)
+  (cd "$upstream_src" && GOTOOLCHAIN=auto go build -trimpath -ldflags='-s -w' -o "$STATE_DIR/bin/openflux.new" .)
   (cd "$PREFIX/source/deploy/panel" && GOTOOLCHAIN=auto go build -trimpath -ldflags='-s -w' -o "$STATE_DIR/bin/openflux-panel.new" .)
   chmod 755 "$STATE_DIR/bin/openflux.new" "$STATE_DIR/bin/openflux-panel.new"
   if [ -f "$STATE_DIR/bin/openflux" ]; then cp -p "$STATE_DIR/bin/openflux" "$STATE_DIR/bin/openflux.rollback"; fi
@@ -183,7 +186,8 @@ install_systemd(){
   if [ -f "$STATE_DIR/panel-revision" ]; then cp -p "$STATE_DIR/panel-revision" "$STATE_DIR/panel-revision.rollback"; fi
   mv "$STATE_DIR/bin/openflux-panel.new" "$STATE_DIR/bin/openflux-panel"
   printf '%s\n' "${DEPLOY_REVISION:-bundled}" >"$STATE_DIR/panel-revision"
-  git -C "$PREFIX/source" rev-parse HEAD >"$STATE_DIR/upstream-version" 2>/dev/null || printf 'bundled\n' >"$STATE_DIR/upstream-version"
+  git -C "$upstream_src" rev-parse HEAD >"$STATE_DIR/upstream-version"
+  rm -rf "$upstream_tmp"
   install -m 755 "$PREFIX/source/deploy/update.sh" /usr/local/lib/openflux-deploy/update.sh
   install -m 755 "$PREFIX/source/deploy/panel-update.sh" /usr/local/lib/openflux-deploy/panel-update.sh
   printf 'systemd\n' >"$CONFIG_DIR/install-mode"

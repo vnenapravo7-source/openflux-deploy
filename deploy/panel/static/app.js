@@ -1,6 +1,6 @@
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
-const names = {yandex:"Yandex Docs",vyandex:"Yandex Volga",boards:"Yandex Board",mailru:"Mail.ru Docs",cupsonline:"Cups.online"};
+const names = {yandex:"Yandex Docs",vyandex:"Yandex Volga",boards:"Yandex Board",mailru:"Mail.ru Docs",cupsonline:"Cups.online",direct:"Direct TCP"};
 let state = null, users = [], editing = null, editingUser = null, editUserAction = "", selectedLog = "", activeView = "overview";
 let pendingUpdatePrompt=false, shownUpdateSignature="", currentUpdateSignature="";
 
@@ -12,6 +12,7 @@ async function api(path, options={}) {
 }
 const json = value => ({headers:{"Content-Type":"application/json"},body:JSON.stringify(value)});
 const esc = value => { const div=document.createElement("div"); div.textContent=String(value??""); return div.innerHTML; };
+const escAttr = value => esc(value).replaceAll('"',"&quot;").replaceAll("'","&#39;");
 const bytes = (input=0) => { let n=Number(input)||0, i=0; const unit=["Б","КБ","МБ","ГБ"]; while(n>=1024&&i<3){n/=1024;i++} return `${n.toFixed(i?1:0)} ${unit[i]}`; };
 const duration = input => { const s=Number(input)||0,d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60); return d?`${d} д ${h} ч`:h?`${h} ч ${m} мин`:`${m} мин`; };
 function toast(message,error=false){const el=$("#toast");el.textContent=message;el.className=error?"show error":"show";setTimeout(()=>el.className="",3500)}
@@ -45,10 +46,12 @@ function drawChart(points){
 
 function connectionCard(c){
   const status=c.running?`Работает · ${duration(c.uptime)}`:c.enabled?`Не запущено${c.last_error?": "+c.last_error:""}`:"Выключено";
-  const code=c.transport==="cupsonline"?`<div class="client-code"><small>Код для клиента Cups.online (поле URL)</small>${c.client_code?`<code>${esc(c.client_code)}</code><button class="secondary small" data-connection-action="copy" data-id="${esc(c.id)}">Копировать код</button>`:`<span>Код появится здесь после запуска и создания комнат.</span>`}</div>`:"";
+  const links=c.transports||[],cups=c.transport==="cupsonline"||links.some(link=>link.type==="cupsonline");
+  const code=cups?`<div class="client-code"><small>Код для клиента Cups.online (поле URL)</small>${c.client_code?`<code>${esc(c.client_code)}</code><button class="secondary small" data-connection-action="copy" data-id="${esc(c.id)}">Копировать код</button>`:`<span>Код появится здесь после запуска и создания комнат.</span>`}</div>`:"";
+  const summary=links.length?links.map(link=>`${names[link.type]||link.type} ${link.priority}`).join(" → "):names[c.transport]||c.transport;
   return `<div class="connection-card ${c.running?'running':''}">
-    <div class="connection-main"><div><strong>${esc(c.name)}</strong><small>${esc(names[c.transport]||c.transport)} · ${esc(c.mode.toUpperCase())} · ${esc(c.codec)}${state.me.role==="admin"?` · ${esc(users.find(u=>u.id===c.owner_id)?.username||c.owner_id)}`:""}</small></div><span class="status ${c.running?'online':'offline'}"><i></i>${esc(status)}</span></div>
-    ${c.transport!=="cupsonline"?`<div class="connection-url">${esc(c.url||"Ссылка не указана")}</div>`:""}
+    <div class="connection-main"><div><strong>${esc(c.name)}</strong><small>${esc(summary)} · ${esc(c.mode.toUpperCase())} · ${esc(c.codec)}${links.length?" · защищённая сессия":""}${state.me.role==="admin"?` · ${esc(users.find(u=>u.id===c.owner_id)?.username||c.owner_id)}`:""}</small></div><span class="status ${c.running?'online':'offline'}"><i></i>${esc(status)}</span></div>
+    ${links.length?`<div class="connection-url">${links.filter(link=>link.url).map(link=>`${esc(names[link.type]||link.type)}: ${esc(link.url)}`).join("<br>")}</div>`:c.transport!=="cupsonline"?`<div class="connection-url">${esc(c.url||"Ссылка не указана")}</div>`:""}
     ${code}
     <div class="connection-actions"><button class="secondary small" data-connection-action="edit" data-id="${esc(c.id)}">Настроить</button><button class="secondary small" data-connection-action="restart" data-id="${esc(c.id)}">Перезапустить</button><button class="secondary small" data-connection-action="logs" data-id="${esc(c.id)}">Журнал</button><button class="danger small" data-connection-action="delete" data-id="${esc(c.id)}">Удалить</button></div>
   </div>`;
@@ -142,24 +145,29 @@ function render(){
 }
 async function refresh(){try{state=await api("/api/state");render();}catch(e){if(e.status===401)showLogin();else if(state)toast(`Нет связи с панелью: ${e.message}`,true);else showLogin();}}
 
-function transportChanged(){const kind=$("#transport").value,cups=kind==="cupsonline",boards=kind==="boards";$("#urlField").classList.toggle("hidden",cups);$("#docUrl").required=!cups&&$("#enabled").checked;$("#urlLabel").textContent=boards?"Публичная ссылка на доску":"Публичная ссылка на документ";$("#docUrl").placeholder=boards?"https://boards.yandex.ru/guest/?hash=…":"https://…";$("#urlHint").textContent=boards?"Нужна гостевая ссылка с параметром hash. Клиент на телефоне тоже должен поддерживать boards.":"Доступ по ссылке должен быть разрешён.";
+function sessionRows(){return $$("#sessionTransportRows .session-transport-row").map(row=>({type:row.querySelector(".session-type").value,url:row.querySelector(".session-url input").value.trim(),priority:Number(row.querySelector(".session-priority").value)}))}
+function refreshSessionRows(){for(const row of $$("#sessionTransportRows .session-transport-row")){const kind=row.querySelector(".session-type").value,url=row.querySelector(".session-url"),input=url.querySelector("input");url.classList.toggle("hidden",kind==="direct");input.required=kind!=="direct"&&kind!=="cupsonline"&&$("#enabled").checked;input.placeholder=kind==="boards"?"https://boards.yandex.ru/guest/?hash=…":"https://…"}$("#directListen").required=$("#sessionMode").checked&&sessionRows().some(link=>link.type==="direct")}
+function addSessionRow(link={}){const row=document.createElement("div");row.className="session-transport-row";row.innerHTML=`<label><span>Транспорт</span><select class="session-type">${["direct","yandex","vyandex","boards","mailru","cupsonline"].map(type=>`<option value="${type}" ${type===(link.type||"yandex")?"selected":""}>${esc(names[type]||"Direct TCP")}</option>`).join("")}</select></label><label><span>Приоритет</span><input class="session-priority" type="number" min="1" max="1000" required value="${Number(link.priority)||50}"></label><label class="session-url"><span>Ссылка</span><input type="url" value="${escAttr(link.url||"")}" autocomplete="off"></label><button class="secondary small" type="button" aria-label="Удалить транспорт">×</button>`;row.querySelector(".session-type").onchange=refreshSessionRows;row.querySelector("button").onclick=()=>{row.remove();refreshSessionRows()};$("#sessionTransportRows").appendChild(row);refreshSessionRows()}
+function sessionChanged(){const advanced=$("#sessionMode").checked;$("#sessionOptions").classList.toggle("hidden",!advanced);$("#legacyTransportField").classList.toggle("hidden",advanced);$("#urlField").classList.toggle("hidden",advanced||$("#transport").value==="cupsonline");$("#codec").disabled=advanced;if(advanced)$("#codec").value="batched";$("#encryptionKey").required=advanced;$("#directListen").disabled=!advanced;$("#maxPacketSize").disabled=!advanced;transportChanged();refreshSessionRows()}
+function transportChanged(){const kind=$("#transport").value,cups=kind==="cupsonline",boards=kind==="boards",advanced=$("#sessionMode").checked;$("#urlField").classList.toggle("hidden",advanced||cups);$("#docUrl").required=!advanced&&!cups&&$("#enabled").checked;$("#urlLabel").textContent=boards?"Публичная ссылка на доску":"Публичная ссылка на документ";$("#docUrl").placeholder=boards?"https://boards.yandex.ru/guest/?hash=…":"https://…";$("#urlHint").textContent=boards?"Нужна гостевая ссылка с параметром hash. Клиент на телефоне тоже должен поддерживать boards.":"Доступ по ссылке должен быть разрешён.";
   const guide={yandex:{url:"https://docs.360.yandex.ru/",label:"Открыть Yandex Docs ↗",tip:'<strong>Снять</strong> галочку «Перейти на новый редактор». Ссылку взять через «Поделиться» в документе.'},vyandex:{url:"https://docs.360.yandex.ru/",label:"Открыть Yandex Volga ↗",tip:'<strong>Оставить</strong> галочку «Перейти на новый редактор». Ссылку взять через «Поделиться» в документе.'},mailru:{url:"https://doc.mail.ru/",label:"Открыть Mail.ru Docs ↗",tip:'Ссылку взять через «Поделиться» в документе.'},boards:{url:"https://boards.yandex.ru/",label:"Открыть Yandex Board ↗",tip:'Скопируйте гостевую ссылку на доску с параметром hash.'}}[kind];
-  $("#transportGuide").classList.toggle("hidden",!guide);
+  $("#transportGuide").classList.toggle("hidden",advanced||!guide);
   if(guide){$("#transportServiceLink").href=guide.url;$("#transportServiceLink").textContent=guide.label;$("#transportTip").innerHTML=guide.tip}
 }
-$("#transport").onchange=transportChanged;$("#enabled").onchange=transportChanged;
+$("#transport").onchange=transportChanged;$("#enabled").onchange=()=>{transportChanged();refreshSessionRows()};$("#sessionMode").onchange=sessionChanged;$("#addSessionTransport").onclick=()=>{if(sessionRows().length<8)addSessionRow({type:"yandex",priority:50})};
 function openConnection(c){
   editing=c?.id||null;$("#editorTitle").textContent=c?`Настроить: ${c.name}`:"Новое подключение";
   $("#connectionName").value=c?.name||"";$("#enabled").checked=c?.enabled??false;$("#transport").value=c?.transport||"yandex";
   $("#mode").value=c?.mode||"l4";$("#codec").value=c?.codec||"batched";$("#docUrl").value=c?.url||"";
   $("#localIp").value=c?.local_ip||"";$("#encryptionKey").value=c?.encryption_key_file||"";$("#debug").checked=!!c?.debug;
+  $("#sessionMode").checked=!!c?.transports?.length;$("#sessionTransportRows").replaceChildren();(c?.transports?.length?c.transports:[{type:c?.transport||"yandex",url:c?.url||"",priority:100}]).forEach(addSessionRow);$("#directListen").value=c?.direct_listen||"";$("#maxPacketSize").value=c?.max_packet_size||"";
   if(state.me.role==="admin")$("#connectionOwner").value=c?.owner_id||state.me.id;
-  $("#connectionOwner").disabled=!!c;transportChanged();$("#connectionEditor").classList.remove("hidden");navigate("connections");$("#connectionEditor").scrollIntoView({behavior:"smooth"});
+  $("#connectionOwner").disabled=!!c;sessionChanged();$("#connectionEditor").classList.remove("hidden");navigate("connections");$("#connectionEditor").scrollIntoView({behavior:"smooth"});
 }
 $("#showConnectionForm").onclick=$("#newConnectionTop").onclick=()=>openConnection();
 $("#cancelConnection").onclick=()=>$("#connectionEditor").classList.add("hidden");
 $("#connectionForm").onsubmit=async event=>{
-  event.preventDefault();const c={name:$("#connectionName").value.trim(),owner_id:state.me.role==="admin"?$("#connectionOwner").value:state.me.id,enabled:$("#enabled").checked,transport:$("#transport").value,url:$("#docUrl").value.trim(),mode:$("#mode").value,codec:$("#codec").value,local_ip:$("#localIp").value.trim(),encryption_key_file:$("#encryptionKey").value.trim(),debug:$("#debug").checked};
+  event.preventDefault();const advanced=$("#sessionMode").checked;if(advanced&&!sessionRows().length)return toast("Добавьте хотя бы один транспорт",true);const c={name:$("#connectionName").value.trim(),owner_id:state.me.role==="admin"?$("#connectionOwner").value:state.me.id,enabled:$("#enabled").checked,transport:advanced?"yandex":$("#transport").value,url:advanced?"":$("#docUrl").value.trim(),mode:$("#mode").value,codec:$("#codec").value,local_ip:$("#localIp").value.trim(),encryption_key_file:$("#encryptionKey").value.trim(),transports:advanced?sessionRows():[],direct_listen:advanced?$("#directListen").value.trim():"",max_packet_size:advanced?Number($("#maxPacketSize").value)||0:0,debug:$("#debug").checked};
   try{await api(editing?`/api/connections/${editing}`:"/api/connections",{method:editing?"PUT":"POST",...json(c)});$("#connectionEditor").classList.add("hidden");toast("Подключение сохранено");await refresh();}catch(e){toast(e.message,true)}
 };
 document.addEventListener("click",async event=>{

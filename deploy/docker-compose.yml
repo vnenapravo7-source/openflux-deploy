@@ -14,6 +14,7 @@ services:
       - NET_ADMIN
     ports:
       - "${OPENFLUX_PORT:-8088}:${OPENFLUX_PORT:-8088}"
+      - "39000-39015:39000-39015/tcp"
     environment:
       OPENFLUX_ADMIN_USER: ${OPENFLUX_ADMIN_USER:-admin}
       OPENFLUX_ADMIN_PASSWORD: ${OPENFLUX_ADMIN_PASSWORD:?set in .env}

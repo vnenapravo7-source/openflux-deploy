@@ -30,6 +30,12 @@ func TestValidateConfig(t *testing.T) {
 		{"cups no url", Config{Enabled: true, Transport: "cupsonline", Mode: "l4", Codec: "legacy"}, true},
 		{"bad scheme", Config{Enabled: true, Transport: "mailru", URL: "file:///etc/passwd", Mode: "l3", Codec: "batched"}, false},
 		{"unknown transport", Config{Transport: "other", Mode: "l3", Codec: "batched"}, false},
+		{"authenticated session", Config{Enabled: true, Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/etc/openflux-deploy/key", Transports: []TransportLink{{Type: "yandex", URL: "https://docs.yandex.ru/example", Priority: 50}, {Type: "direct", Priority: 100}}, DirectListen: ":39000", MaxPacketSize: 1500}, true},
+		{"session without key", Config{Transport: "yandex", Mode: "l4", Codec: "batched", Transports: []TransportLink{{Type: "direct", Priority: 100}}, DirectListen: ":39000"}, false},
+		{"session legacy codec", Config{Transport: "yandex", Mode: "l4", Codec: "legacy", EncryptionKeyFile: "/key", Transports: []TransportLink{{Type: "direct", Priority: 100}}, DirectListen: ":39000"}, false},
+		{"session duplicate transport", Config{Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/key", Transports: []TransportLink{{Type: "direct", Priority: 100}, {Type: "direct", Priority: 50}}, DirectListen: ":39000"}, false},
+		{"session invalid packet size", Config{Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/key", Transports: []TransportLink{{Type: "direct", Priority: 100}}, DirectListen: ":39000", MaxPacketSize: 1000}, false},
+		{"session direct without listener", Config{Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/key", Transports: []TransportLink{{Type: "direct", Priority: 100}}}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -46,6 +52,19 @@ func TestBoardConnectionArgs(t *testing.T) {
 	args := strings.Join(connectionArgs(c), " ")
 	if !strings.Contains(args, "--transport=boards") || !strings.Contains(args, "--url="+c.URL) {
 		t.Fatalf("board connection arguments: %s", args)
+	}
+}
+
+func TestAuthenticatedConnectionArgs(t *testing.T) {
+	c := Connection{ID: "example", Config: Config{Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/etc/openflux-deploy/key", Transports: []TransportLink{{Type: "direct", Priority: 100}, {Type: "yandex", URL: "https://docs.yandex.ru/example", Priority: 50}}, DirectListen: ":39000", MaxPacketSize: 1500}}
+	args := strings.Join(connectionArgs(c), " ")
+	for _, expected := range []string{"--transports=direct:100,yandex:50", "--negotiate", "--direct-listen=:39000", "--yandex-url=https://docs.yandex.ru/example", "--max-packet-size=1500", "--cookie-store="} {
+		if !strings.Contains(args, expected) {
+			t.Fatalf("missing %s in %s", expected, args)
+		}
+	}
+	if strings.Contains(args, "--url=") {
+		t.Fatalf("session must not set legacy URL (changes handshake context): %s", args)
 	}
 }
 

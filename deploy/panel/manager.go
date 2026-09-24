@@ -30,8 +30,19 @@ type Config struct {
 	Codec             string `json:"codec"`
 	LocalIP           string `json:"local_ip"`
 	EncryptionKeyFile string `json:"encryption_key_file"`
+	Transports        []TransportLink `json:"transports,omitempty"`
+	DirectListen      string `json:"direct_listen,omitempty"`
+	MaxPacketSize     int    `json:"max_packet_size,omitempty"`
 	Debug             bool   `json:"debug"`
 	AutoUpdate        bool   `json:"auto_update,omitempty"` // Only used to migrate the original single connection.
+}
+
+// TransportLink describes one carrier in the authenticated OpenFlux session.
+// An empty list keeps the original single-transport protocol for old clients.
+type TransportLink struct {
+	Type     string `json:"type"`
+	URL      string `json:"url,omitempty"`
+	Priority int    `json:"priority"`
 }
 
 type Connection struct {
@@ -137,17 +148,82 @@ func validateConfig(c Config) error {
 	if c.LocalIP != "" && net.ParseIP(c.LocalIP) == nil {
 		return fmt.Errorf("local IP is invalid")
 	}
-	if c.Enabled && c.Transport != "cupsonline" {
-		if strings.TrimSpace(c.URL) == "" {
-			return fmt.Errorf("document URL is required")
+	if len(c.Transports) == 0 {
+		if c.DirectListen != "" || c.MaxPacketSize != 0 {
+			return fmt.Errorf("session settings require at least one transport")
 		}
-		u, err := url.ParseRequestURI(c.URL)
-		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil {
-			return fmt.Errorf("document URL must be an http(s) URL")
+		return validateTransportURL(c.Transport, c.URL, c.Enabled)
+	}
+	if c.Codec != "batched" || strings.TrimSpace(c.EncryptionKeyFile) == "" {
+		return fmt.Errorf("authenticated session requires batched codec and an encryption key file")
+	}
+	if c.MaxPacketSize != 0 && (c.MaxPacketSize < 1280 || c.MaxPacketSize > 65000) {
+		return fmt.Errorf("maximum packet size must be 1280–65000")
+	}
+	if len(c.Transports) > 8 {
+		return fmt.Errorf("at most 8 transports are supported")
+	}
+	seen := make(map[string]bool, len(c.Transports))
+	direct := false
+	for _, link := range c.Transports {
+		switch link.Type {
+		case "yandex", "vyandex", "boards", "mailru", "cupsonline", "direct":
+		default:
+			return fmt.Errorf("unsupported session transport %q", link.Type)
 		}
-		if c.Transport == "boards" && (u.Scheme != "https" || !strings.EqualFold(u.Hostname(), "boards.yandex.ru") || strings.TrimSpace(u.Query().Get("hash")) == "") {
-			return fmt.Errorf("Yandex Board requires an https://boards.yandex.ru/... URL with a hash parameter")
+		if seen[link.Type] {
+			return fmt.Errorf("transport %q appears more than once", link.Type)
 		}
+		seen[link.Type] = true
+		if link.Priority < 1 || link.Priority > 1000 {
+			return fmt.Errorf("transport priority must be 1–1000")
+		}
+		if link.Type == "direct" {
+			direct = true
+			if link.URL != "" {
+				return fmt.Errorf("direct transport does not use a document URL")
+			}
+			continue
+		}
+		if err := validateTransportURL(link.Type, link.URL, c.Enabled); err != nil {
+			return err
+		}
+	}
+	if direct {
+		if err := validateDirectListen(c.DirectListen); err != nil {
+			return err
+		}
+	} else if c.DirectListen != "" {
+		return fmt.Errorf("direct listen address requires a direct transport")
+	}
+	return nil
+}
+
+func validateTransportURL(kind, value string, enabled bool) error {
+	if !enabled || kind == "cupsonline" && value == "" {
+		return nil
+	}
+	if strings.TrimSpace(value) == "" {
+		return fmt.Errorf("document URL is required for %s", kind)
+	}
+	u, err := url.ParseRequestURI(value)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil {
+		return fmt.Errorf("document URL must be an http(s) URL")
+	}
+	if kind == "boards" && (u.Scheme != "https" || !strings.EqualFold(u.Hostname(), "boards.yandex.ru") || strings.TrimSpace(u.Query().Get("hash")) == "") {
+		return fmt.Errorf("Yandex Board requires an https://boards.yandex.ru/... URL with a hash parameter")
+	}
+	return nil
+}
+
+func validateDirectListen(value string) error {
+	host, portText, err := net.SplitHostPort(value)
+	port, parseErr := strconv.Atoi(portText)
+	if err != nil || parseErr != nil || port < 1 || port > 65535 || (host != "" && host != "0.0.0.0" && host != "::") {
+		return fmt.Errorf("direct listen address must be :PORT or 0.0.0.0:PORT")
+	}
+	if _, err := os.Stat("/.dockerenv"); err == nil && (port < 39000 || port > 39015) {
+		return fmt.Errorf("Docker direct transport ports must be within 39000–39015")
 	}
 	return nil
 }
@@ -247,9 +323,28 @@ func (m *Manager) findLocked(id string) (int, bool) {
 }
 
 func connectionArgs(c Connection) []string {
-	args := []string{"--role=exit", "--mode=" + c.Mode, "--transport=" + c.Transport, "--codec=" + c.Codec}
-	if c.URL != "" {
-		args = append(args, "--url="+c.URL)
+	args := []string{"--role=exit", "--mode=" + c.Mode, "--codec=" + c.Codec}
+	if len(c.Transports) == 0 {
+		args = append(args, "--transport="+c.Transport)
+		if c.URL != "" {
+			args = append(args, "--url="+c.URL)
+		}
+	} else {
+		list := make([]string, 0, len(c.Transports))
+		for _, link := range c.Transports {
+			list = append(list, fmt.Sprintf("%s:%d", link.Type, link.Priority))
+			if link.URL != "" {
+				args = append(args, "--"+link.Type+"-url="+link.URL)
+			}
+		}
+		args = append(args, "--transports="+strings.Join(list, ","), "--negotiate")
+		if c.MaxPacketSize != 0 {
+			args = append(args, fmt.Sprintf("--max-packet-size=%d", c.MaxPacketSize))
+		}
+		if c.DirectListen != "" {
+			args = append(args, "--direct-listen="+c.DirectListen)
+		}
+		args = append(args, "--cookie-store="+filepath.Join(env("OPENFLUX_STATE_DIR", "/var/lib/openflux-deploy"), "cookies-"+c.ID+".json"))
 	}
 	if c.LocalIP != "" {
 		args = append(args, "--local-ip="+c.LocalIP)
@@ -272,6 +367,12 @@ func (m *Manager) startLocked(id string) error {
 	p := m.processes[id]
 	if !c.Enabled || p.cmd != nil {
 		return nil
+	}
+	if len(c.Transports) > 0 {
+		help, err := exec.Command(m.binaryPath, "--help").CombinedOutput()
+		if err != nil || !strings.Contains(string(help), "--transports=") {
+			return fmt.Errorf("this server binary does not support authenticated multi-transport sessions; update the server first")
+		}
 	}
 	cmd := exec.Command(m.binaryPath, connectionArgs(c)...)
 	pipe, err := cmd.StdoutPipe()
@@ -427,6 +528,9 @@ func (m *Manager) addConnection(c Connection) (Connection, error) {
 	c.AutoUpdate = false
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.validateDirectPortLocked("", c.DirectListen); err != nil {
+		return Connection{}, err
+	}
 	next := append(append([]Connection(nil), m.connections...), c)
 	if err := writeJSONFile(m.connectionsPath, next); err != nil {
 		return Connection{}, err
@@ -449,6 +553,9 @@ func (m *Manager) updateConnection(id string, c Connection) error {
 	if !ok {
 		return os.ErrNotExist
 	}
+	if err := m.validateDirectPortLocked(id, c.DirectListen); err != nil {
+		return err
+	}
 	c.ID, c.OwnerID, c.AutoUpdate = id, m.connections[i].OwnerID, false
 	next := append([]Connection(nil), m.connections...)
 	next[i] = c
@@ -457,6 +564,23 @@ func (m *Manager) updateConnection(id string, c Connection) error {
 	}
 	m.connections = next
 	return m.restartLocked(id)
+}
+
+func (m *Manager) validateDirectPortLocked(id, listen string) error {
+	if listen == "" {
+		return nil
+	}
+	_, port, _ := net.SplitHostPort(listen) // validateConfig checked the address.
+	for _, other := range m.connections {
+		if other.ID == id || other.DirectListen == "" {
+			continue
+		}
+		_, occupied, _ := net.SplitHostPort(other.DirectListen)
+		if port == occupied {
+			return fmt.Errorf("direct port %s is already used by connection %s", port, other.Name)
+		}
+	}
+	return nil
 }
 
 func (m *Manager) deleteConnection(id string) error {

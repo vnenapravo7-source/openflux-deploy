@@ -72,13 +72,23 @@
             <div class="form-grid">
               <label><span>Название</span><input id="connectionName" required maxlength="80" placeholder="Личное подключение"></label>
               <label id="ownerField" class="admin-only"><span>Владелец</span><select id="connectionOwner"></select></label>
-              <label><span>Сервис транспорта</span><select id="transport"><option value="yandex">Yandex Docs</option><option value="vyandex">Yandex Volga</option><option value="boards">Yandex Board</option><option value="mailru">Mail.ru Docs</option><option value="cupsonline">Cups.online</option></select></label>
+              <label id="legacyTransportField"><span>Сервис транспорта</span><select id="transport"><option value="yandex">Yandex Docs</option><option value="vyandex">Yandex Volga</option><option value="boards">Yandex Board</option><option value="mailru">Mail.ru Docs</option><option value="cupsonline">Cups.online</option></select></label>
               <label><span>Режим выхода</span><select id="mode"><option value="l4">L4 · совместимый</option><option value="l3">L3 · Linux root</option></select></label>
               <label class="wide" id="urlField"><span id="urlLabel">Публичная ссылка на документ</span><input id="docUrl" type="url" placeholder="https://…" autocomplete="off"><small id="urlHint">Доступ по ссылке должен быть разрешён.</small></label>
               <div id="transportGuide" class="transport-guide wide"><a id="transportServiceLink" target="_blank" rel="noopener noreferrer"></a><small id="transportTip"></small></div>
               <label><span>Кодек</span><select id="codec"><option value="batched">Batched + zstd</option><option value="legacy">Legacy LZ4</option></select></label>
               <label><span>Исходящий IP <em>необязательно</em></span><input id="localIp" placeholder="автоопределение" autocomplete="off"></label>
               <label class="wide"><span>Файл ключа шифрования <em>необязательно</em></span><input id="encryptionKey" placeholder="/etc/openflux-deploy/secret.key" autocomplete="off"><small>Одинаковый ключ должен быть установлен на сервере и клиенте.</small></label>
+            </div>
+            <label class="check"><input id="sessionMode" type="checkbox"><span>Защищённая сессия OpenFlux 0.0.5 · несколько транспортов и автоматическое переключение</span></label>
+            <div id="sessionOptions" class="session-options hidden">
+              <p>Требуются Batched, общий ключ шифрования и клиент с поддержкой <code>--negotiate</code>. Нынешние мобильные сборки могут не поддерживать этот режим. Не переключайте работающее подключение, пока не проверите клиент.</p>
+              <div id="sessionTransportRows" class="session-transport-rows"></div>
+              <button id="addSessionTransport" class="secondary small" type="button">+ Добавить транспорт</button>
+              <div class="form-grid">
+                <label><span>Direct: адрес прослушивания на сервере</span><input id="directListen" placeholder=":39000" autocomplete="off"><small>В Docker доступны TCP-порты 39000–39015. Откройте выбранный порт в firewall VPS.</small></label>
+                <label><span>Максимальный IPv4-пакет</span><input id="maxPacketSize" type="number" min="1280" max="65000" placeholder="65000"><small>Необязательно; предел 1280–65000.</small></label>
+              </div>
             </div>
             <label class="check"><input id="debug" type="checkbox"><span>Подробный журнал отладки</span></label>
             <div class="form-actions"><span id="saveMessage"></span><button type="submit" class="primary">Сохранить и применить</button></div>
