@@ -190,8 +190,10 @@ func validateConfig(c Config) error {
 		}
 	}
 	if direct {
-		if err := validateDirectListen(c.DirectListen); err != nil {
-			return err
+		if c.DirectListen != "" {
+			if err := validateDirectListen(c.DirectListen); err != nil {
+				return err
+			}
 		}
 	} else if c.DirectListen != "" {
 		return fmt.Errorf("direct listen address requires a direct transport")
@@ -226,6 +228,22 @@ func validateDirectListen(value string) error {
 		return fmt.Errorf("Docker direct transport ports must be within 39000–39015")
 	}
 	return nil
+}
+
+func usesDirect(c Config) bool {
+	for _, link := range c.Transports {
+		if link.Type == "direct" {
+			return true
+		}
+	}
+	return false
+}
+
+func dockerDirectReady() bool {
+	if _, err := os.Stat("/.dockerenv"); errors.Is(err, os.ErrNotExist) {
+		return true // systemd installation, no Docker port publishing needed.
+	}
+	return os.Getenv("OPENFLUX_DIRECT_PORTS_PUBLISHED") == "1"
 }
 
 func validateConnection(c Connection) error {
@@ -367,6 +385,14 @@ func (m *Manager) startLocked(id string) error {
 	p := m.processes[id]
 	if !c.Enabled || p.cmd != nil {
 		return nil
+	}
+	if usesDirect(c.Config) {
+		if !dockerDirectReady() {
+			return fmt.Errorf("Docker ещё не подготовлен для Direct: один раз повторно запустите установщик")
+		}
+		if c.DirectListen == "" {
+			return fmt.Errorf("порт Direct не назначен")
+		}
 	}
 	if len(c.Transports) > 0 {
 		help, err := exec.Command(m.binaryPath, "--help").CombinedOutput()
@@ -528,7 +554,7 @@ func (m *Manager) addConnection(c Connection) (Connection, error) {
 	c.AutoUpdate = false
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if err := m.validateDirectPortLocked("", c.DirectListen); err != nil {
+	if err := m.prepareDirectLocked("", &c); err != nil {
 		return Connection{}, err
 	}
 	next := append(append([]Connection(nil), m.connections...), c)
@@ -553,7 +579,7 @@ func (m *Manager) updateConnection(id string, c Connection) error {
 	if !ok {
 		return os.ErrNotExist
 	}
-	if err := m.validateDirectPortLocked(id, c.DirectListen); err != nil {
+	if err := m.prepareDirectLocked(id, &c); err != nil {
 		return err
 	}
 	c.ID, c.OwnerID, c.AutoUpdate = id, m.connections[i].OwnerID, false
@@ -581,6 +607,36 @@ func (m *Manager) validateDirectPortLocked(id, listen string) error {
 		}
 	}
 	return nil
+}
+
+func (m *Manager) prepareDirectLocked(id string, c *Connection) error {
+	if !usesDirect(c.Config) {
+		return nil
+	}
+	if c.Enabled && !dockerDirectReady() {
+		return fmt.Errorf("для Direct требуется однократное обновление Docker; скопируйте команду из панели")
+	}
+	if c.DirectListen == "" {
+		if i, ok := m.findLocked(id); ok && m.connections[i].DirectListen != "" {
+			c.DirectListen = m.connections[i].DirectListen
+		} else {
+			for port := 39000; port <= 39015; port++ {
+				candidate := fmt.Sprintf(":%d", port)
+				if m.validateDirectPortLocked(id, candidate) == nil {
+					listener, err := net.Listen("tcp", candidate)
+					if err == nil {
+						listener.Close()
+						c.DirectListen = candidate
+						break
+					}
+				}
+			}
+			if c.DirectListen == "" {
+				return fmt.Errorf("all Direct ports 39000–39015 are in use")
+			}
+		}
+	}
+	return m.validateDirectPortLocked(id, c.DirectListen)
 }
 
 func (m *Manager) deleteConnection(id string) error {
@@ -721,7 +777,7 @@ func revisionFromFile(path string) string {
 }
 
 func (m *Manager) state(user User) map[string]any {
-	state := map[string]any{"me": UserView{user.ID, user.Username, user.Role}, "connections": m.connectionViews(user), "upstream_version": m.version(), "panel_version": panelVersion, "panel_revision": m.panelRevision()}
+	state := map[string]any{"me": UserView{user.ID, user.Username, user.Role}, "connections": m.connectionViews(user), "upstream_version": m.version(), "panel_version": panelVersion, "panel_revision": m.panelRevision(), "direct_ports_ready": dockerDirectReady()}
 	if user.Role == "admin" {
 		m.mu.Lock()
 		state["traffic"] = append([]TrafficPoint{}, m.traffic...)

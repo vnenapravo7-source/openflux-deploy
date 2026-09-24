@@ -83,10 +83,11 @@
             <label class="check"><input id="sessionMode" type="checkbox"><span>Защищённая сессия OpenFlux 0.0.5 · несколько транспортов и автоматическое переключение</span></label>
             <div id="sessionOptions" class="session-options hidden">
               <p>Требуются Batched, общий ключ шифрования и клиент с поддержкой <code>--negotiate</code>. Нынешние мобильные сборки могут не поддерживать этот режим. Не переключайте работающее подключение, пока не проверите клиент.</p>
+              <div id="directSetupNotice" class="direct-setup-notice hidden"><strong>Docker ещё не подготовлен для Direct.</strong> Порты задаются при создании контейнера. Один раз запустите обновлённый установщик на VPS; затем панель будет выбирать порт сама. <button id="copyDirectSetup" class="secondary small" type="button">Скопировать команду</button></div>
               <div id="sessionTransportRows" class="session-transport-rows"></div>
               <button id="addSessionTransport" class="secondary small" type="button">+ Добавить транспорт</button>
               <div class="form-grid">
-                <label><span>Direct: адрес прослушивания на сервере</span><input id="directListen" placeholder=":39000" autocomplete="off"><small>В Docker доступны TCP-порты 39000–39015. Откройте выбранный порт в firewall VPS.</small></label>
+                <label><span>Порт Direct на сервере</span><input id="directListen" placeholder="Выберется автоматически" autocomplete="off"><small>Оставьте пустым: панель выберет свободный порт. Если у провайдера VPS включён отдельный сетевой фильтр, разрешите в нём выбранный порт.</small></label>
                 <label><span>Максимальный IPv4-пакет</span><input id="maxPacketSize" type="number" min="1280" max="65000" placeholder="65000"><small>Необязательно; предел 1280–65000.</small></label>
               </div>
             </div>

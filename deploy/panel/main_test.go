@@ -35,7 +35,7 @@ func TestValidateConfig(t *testing.T) {
 		{"session legacy codec", Config{Transport: "yandex", Mode: "l4", Codec: "legacy", EncryptionKeyFile: "/key", Transports: []TransportLink{{Type: "direct", Priority: 100}}, DirectListen: ":39000"}, false},
 		{"session duplicate transport", Config{Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/key", Transports: []TransportLink{{Type: "direct", Priority: 100}, {Type: "direct", Priority: 50}}, DirectListen: ":39000"}, false},
 		{"session invalid packet size", Config{Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/key", Transports: []TransportLink{{Type: "direct", Priority: 100}}, DirectListen: ":39000", MaxPacketSize: 1000}, false},
-		{"session direct without listener", Config{Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/key", Transports: []TransportLink{{Type: "direct", Priority: 100}}}, false},
+		{"session direct automatic listener", Config{Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/key", Transports: []TransportLink{{Type: "direct", Priority: 100}}}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -44,6 +44,21 @@ func TestValidateConfig(t *testing.T) {
 				t.Fatalf("validateConfig() error = %v, want ok=%v", err, tc.ok)
 			}
 		})
+	}
+}
+
+func TestDirectPortAssignedWithoutCollision(t *testing.T) {
+	t.Setenv("OPENFLUX_DIRECT_PORTS_PUBLISHED", "1")
+	m := &Manager{connections: []Connection{{ID: "existing", Name: "First", Config: Config{DirectListen: ":39000"}}}}
+	c := Connection{Config: Config{Transports: []TransportLink{{Type: "direct", Priority: 100}}}}
+	if err := m.prepareDirectLocked("", &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.DirectListen == "" || c.DirectListen == ":39000" {
+		t.Fatalf("invalid automatic Direct listener: %q", c.DirectListen)
+	}
+	if err := m.validateDirectPortLocked("", ":39000"); err == nil {
+		t.Fatal("duplicate Direct port accepted")
 	}
 }
 

@@ -34,6 +34,7 @@ services:
       OPENFLUX_PANEL_UPDATE_SCRIPT: /usr/local/lib/openflux-deploy/panel-update.sh
       OPENFLUX_PANEL_REVISION_FILE: /var/lib/openflux-deploy/panel-revision
       OPENFLUX_ROLLBACK_CAPABLE: "1"
+      OPENFLUX_DIRECT_PORTS_PUBLISHED: "1"
       OPENFLUX_DEPLOY_REPO: ${OPENFLUX_DEPLOY_REPO:-vnenapravo7-source/openflux-deploy}
       OPENFLUX_DEPLOY_REF: ${OPENFLUX_DEPLOY_REF:-main}
       OPENFLUX_UPSTREAM_REPO: ${OPENFLUX_UPSTREAM_REPO:-https://github.com/p1neappleXpress/OpenFlux.git}
