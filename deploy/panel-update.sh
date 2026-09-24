@@ -62,7 +62,7 @@ say 'checking the latest panel revision'
 LATEST="$(timeout 2m git ls-remote "https://github.com/$REPO.git" "refs/heads/$REF" | awk '{print $1}')"
 [ -n "$LATEST" ] || { say 'cannot resolve deploy branch'; exit 1; }
 CURRENT="$(cat "$REVISION_FILE" 2>/dev/null || true)"
-if [ "$LATEST" = "$CURRENT" ] && [ "${1:-}" != "--force" ]; then say "already current ($LATEST)"; exit 0; fi
+if [ "$LATEST" = "$CURRENT" ]; then say "already current ($LATEST)"; exit 0; fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -74,8 +74,10 @@ say 'building panel (up to 10 minutes)'
 say 'checking the new binary'
 "$TMP/openflux-panel" --version | grep -q '^OpenFlux panel '
 
-if [ -f "$PANEL_BIN" ]; then cp -p "$PANEL_BIN" "$PANEL_BIN.rollback"; fi
-if [ -f "$REVISION_FILE" ]; then cp -p "$REVISION_FILE" "$REVISION_FILE.rollback"; fi
+if [ "$CURRENT" != "$CHECKED_OUT" ]; then
+  if [ -f "$PANEL_BIN" ]; then cp -p "$PANEL_BIN" "$PANEL_BIN.rollback"; fi
+  if [ -f "$REVISION_FILE" ]; then cp -p "$REVISION_FILE" "$REVISION_FILE.rollback"; fi
+fi
 install -m 755 "$TMP/openflux-panel" "$PANEL_BIN.new"
 mv "$PANEL_BIN.new" "$PANEL_BIN"
 printf '%s\n' "$CHECKED_OUT" >"$REVISION_FILE.new"
@@ -83,3 +85,4 @@ mv "$REVISION_FILE.new" "$REVISION_FILE"
 say "installed $CHECKED_OUT; previous binary: $PANEL_BIN.rollback"
 
 restart_panel
+

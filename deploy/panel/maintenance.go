@@ -26,6 +26,9 @@ func (m *Manager) rollbackServer() error {
 	if !regularFile(m.binaryPath+".rollback") || !regularFile(m.versionPath+".rollback") {
 		return fmt.Errorf("previous server version is unavailable")
 	}
+	if revisionFromFile(m.versionPath+".rollback") == m.version() {
+		return fmt.Errorf("server backup is the same revision as the current version")
+	}
 	m.mu.Lock()
 	if m.updating || m.updatingPanel {
 		m.mu.Unlock()
@@ -59,6 +62,9 @@ func (m *Manager) rollbackPanel() error {
 	panelBinary := filepath.Join(filepath.Dir(m.panelRevisionPath), "bin", "openflux-panel")
 	if !regularFile(panelBinary+".rollback") || !regularFile(m.panelRevisionPath+".rollback") {
 		return fmt.Errorf("previous panel version is unavailable")
+	}
+	if revisionFromFile(m.panelRevisionPath+".rollback") == m.panelRevision() {
+		return fmt.Errorf("panel backup is the same revision as the current version")
 	}
 	return m.runPanelScript("--rollback", "rollback")
 }
@@ -135,3 +141,4 @@ func (m *Manager) checkVersions(force bool) {
 		m.mu.Unlock()
 	}()
 }
+

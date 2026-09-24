@@ -577,18 +577,18 @@ func (m *Manager) sampleTraffic() {
 }
 
 func (m *Manager) version() string {
-	raw, err := os.ReadFile(m.versionPath)
-	if err != nil {
-		return "unknown"
-	}
-	return strings.TrimSpace(string(raw))
+	return revisionFromFile(m.versionPath)
 }
 
 func (m *Manager) panelRevision() string {
-	if m.panelRevisionPath == "" {
+	return revisionFromFile(m.panelRevisionPath)
+}
+
+func revisionFromFile(path string) string {
+	if path == "" {
 		return "unknown"
 	}
-	raw, err := os.ReadFile(m.panelRevisionPath)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return "unknown"
 	}
@@ -608,13 +608,19 @@ func (m *Manager) state(user User) map[string]any {
 		state["panel_update_error"] = m.panelUpdateError
 		state["panel_action"] = m.panelAction
 		state["checking_versions"] = m.checkingVersions
+		if !m.lastVersionCheck.IsZero() {
+			state["last_version_check"] = m.lastVersionCheck.Format(time.RFC3339)
+		}
 		state["latest_upstream"] = m.latestUpstream
 		state["latest_panel"] = m.latestPanel
 		state["version_check_error"] = m.versionCheckError
 		m.mu.Unlock()
 		state["rollback_capable"] = m.rollbackCapable
-		state["server_rollback_available"] = m.rollbackCapable && regularFile(m.binaryPath+".rollback") && regularFile(m.versionPath+".rollback")
-		state["panel_rollback_available"] = m.rollbackCapable && regularFile(filepath.Join(filepath.Dir(m.panelRevisionPath), "bin/openflux-panel.rollback")) && regularFile(m.panelRevisionPath+".rollback")
+		previousServer, previousPanel := revisionFromFile(m.versionPath+".rollback"), revisionFromFile(m.panelRevisionPath+".rollback")
+		state["previous_server_revision"] = previousServer
+		state["previous_panel_revision"] = previousPanel
+		state["server_rollback_available"] = m.rollbackCapable && regularFile(m.binaryPath+".rollback") && regularFile(m.versionPath+".rollback") && previousServer != m.version()
+		state["panel_rollback_available"] = m.rollbackCapable && regularFile(filepath.Join(filepath.Dir(m.panelRevisionPath), "bin/openflux-panel.rollback")) && regularFile(m.panelRevisionPath+".rollback") && previousPanel != m.panelRevision()
 		state["panel_update_log"] = tailFile(m.panelUpdateLogPath, 8192)
 		state["nodes"] = m.nodeViews()
 	}
@@ -906,3 +912,4 @@ func (m *Manager) removeUserConnections(ownerID string) error {
 	m.connections = next
 	return nil
 }
+

@@ -71,7 +71,7 @@ install -d -m 755 "$STATE_DIR/bin"
 LATEST="$(git ls-remote "$UPSTREAM_REPO" refs/heads/main | awk '{print $1}')"
 [ -n "$LATEST" ] || { say "cannot resolve upstream main"; exit 1; }
 CURRENT="$(cat "$VERSION_FILE" 2>/dev/null || true)"
-if [ "$LATEST" = "$CURRENT" ] && [ "$FORCE" -eq 0 ]; then say "already current ($LATEST)"; exit 0; fi
+if [ "$LATEST" = "$CURRENT" ]; then say "already current ($LATEST)"; exit 0; fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -107,3 +107,4 @@ if ! check_health; then
   fi
 fi
 say "health check passed"
+

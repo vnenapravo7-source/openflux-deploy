@@ -96,10 +96,13 @@ function render(){
     $("#rollbackHint").classList.toggle("hidden",!!state.rollback_capable);
     $("#checkUpdatesBtn").disabled=!!state.checking_versions;
     $("#checkUpdatesBtn").textContent=state.checking_versions?"Проверяем…":"Проверить версии";
+    $("#versionCheckStatus").textContent=state.checking_versions?"Проверяю версии сервера и панели…":state.version_check_error?`Ошибка проверки: ${state.version_check_error}`:state.last_version_check?`Проверено: ${new Date(state.last_version_check).toLocaleString("ru-RU")}. ${state.latest_upstream&&state.latest_panel?"Результаты ниже.":"Не удалось получить все версии."}`:"Версии ещё не проверены";
     const serverNew=!!state.latest_upstream&&state.latest_upstream!==state.upstream_version;
     const panelNew=!!state.latest_panel&&state.latest_panel!==state.panel_revision;
     $("#serverVersionStatus").textContent=state.latest_upstream?`Последняя ревизия: ${state.latest_upstream.slice(0,8)}${serverNew?" · доступно обновление":" · актуально"}`:"";
     $("#panelVersionStatus").textContent=state.latest_panel?`Последняя ревизия: ${state.latest_panel.slice(0,8)}${panelNew?" · доступно обновление":" · актуально"}`:"";
+    $("#serverRollbackTarget").textContent=state.previous_server_revision&&state.previous_server_revision!=="unknown"?`Резервная версия: ${state.previous_server_revision.slice(0,8)}${state.previous_server_revision===state.upstream_version?" · совпадает с текущей":""}`:"Резервной версии пока нет";
+    $("#panelRollbackTarget").textContent=state.previous_panel_revision&&state.previous_panel_revision!=="unknown"?`Резервная версия: ${state.previous_panel_revision.slice(0,8)}${state.previous_panel_revision===state.panel_revision?" · совпадает с текущей":""}`:"Резервной версии пока нет";
     $("#updateNotice").classList.toggle("hidden",!serverNew&&!panelNew);
     $("#updateNoticeText").textContent=serverNew&&panelNew?"Для сервера и панели доступны новые версии.":serverNew?"Доступна новая версия сервера.":"Доступна новая версия панели.";
     $("#offerServerUpdate").classList.toggle("hidden",!serverNew);$("#offerPanelUpdate").classList.toggle("hidden",!panelNew);
@@ -177,10 +180,11 @@ $("#updateBtn").onclick=async()=>{try{await api("/api/update",{method:"POST"});t
 $("#updatePanelBtn").onclick=async()=>{try{await api("/api/update-panel",{method:"POST"});toast("Обновление панели запущено. После перезапуска войдите снова.");await refresh()}catch(e){toast(e.message,true)}};
 $("#rollbackServerBtn").onclick=async()=>{if(!confirm("Откатить серверную часть на предыдущую версию? Автообновление будет выключено."))return;try{await api("/api/rollback-server",{method:"POST"});toast("Откат сервера запущен");await refresh()}catch(e){toast(e.message,true)}};
 $("#rollbackPanelBtn").onclick=async()=>{if(!confirm("Откатить панель на предыдущую версию? После перезапуска потребуется повторный вход."))return;try{await api("/api/rollback-panel",{method:"POST"});toast("Откат панели запущен");await refresh()}catch(e){toast(e.message,true)}};
-async function checkUpdates(force=false){if(state?.me.role!=="admin")return;try{await api(`/api/check-updates${force?"?force=1":""}`,{method:"POST"});await refresh()}catch(e){toast(`Проверка версий: ${e.message}`,true)}}
+async function checkUpdates(force=false){if(state?.me.role!=="admin")return;try{await api(`/api/check-updates${force?"?force=1":""}`,{method:"POST"});if(force)toast("Проверка версий запущена; результат появится в разделе «Обслуживание».");await refresh()}catch(e){toast(`Проверка версий: ${e.message}`,true)}}
 $("#checkUpdatesBtn").onclick=()=>checkUpdates(true);
 $("#offerServerUpdate").onclick=()=>$("#updateBtn").click();$("#offerPanelUpdate").onclick=()=>$("#updatePanelBtn").click();
 $("#showAddNode").onclick=()=>$("#nodeForm").classList.remove("hidden");$("#cancelNode").onclick=()=>$("#nodeForm").classList.add("hidden");
 $("#nodeForm").onsubmit=async event=>{event.preventDefault();try{await api("/api/nodes",{method:"POST",...json({name:$("#nodeName").value.trim(),base_url:$("#nodeUrl").value.trim(),token:$("#nodeToken").value,tls_sha256:$("#nodeFingerprint").value.trim()})});event.target.reset();event.target.classList.add("hidden");toast("Нода подключена");await refresh()}catch(e){toast(e.message,true)}};
 addEventListener("resize",()=>state?.me.role==="admin"&&drawChart(state.traffic||[]));
 refresh().then(()=>{if(state?.me.role==="admin"){loadUsers();checkUpdates()}});setInterval(()=>{if(state)refresh()},5000);
+
