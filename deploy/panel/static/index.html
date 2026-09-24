@@ -51,6 +51,7 @@
           <label class="check"><input id="autoUpdate" type="checkbox"><span>Автоматически обновлять серверную часть</span></label>
           <div class="maintenance-row"><div><b>Веб-панель</b><small>vnenapravo7-source/openflux-deploy · после обновления потребуется повторный вход</small><small id="panelVersionStatus"></small><small id="panelRollbackTarget"></small></div><div class="maintenance-actions"><button id="rollbackPanelBtn" class="secondary small">Откатить панель</button><button id="updatePanelBtn" class="secondary small">Обновить панель</button></div></div>
           <small id="serverUpdateStatus" role="status"></small>
+          <pre id="serverUpdateLog" class="panel-update-log hidden" aria-label="Журнал обновления сервера"></pre>
           <small id="panelUpdateStatus" role="status"></small>
           <small id="rollbackHint" class="hidden">Для кнопок отката один раз повторно запустите установщик, чтобы обновить сервис или Docker-образ.</small>
           <pre id="panelUpdateLog" class="panel-update-log hidden" aria-label="Журнал обновления панели"></pre>
@@ -144,4 +145,3 @@
   <div id="toast" role="status"></div><script src="/app.js"></script><script src="/instructions.js"></script>
 </body>
 </html>
-
