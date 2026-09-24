@@ -1,0 +1,7 @@
+html,body,.shell,aside,main,.card,.form-grid label,.node-form label,.node{min-width:0}
+body{overflow-x:hidden}
+@media(max-width:570px){
+  header{gap:14px;flex-wrap:wrap}
+  .header-actions{margin-left:auto}
+  .node-form input{min-width:0}
+}

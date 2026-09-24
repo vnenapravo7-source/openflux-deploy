@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+REPO="${OPENFLUX_DEPLOY_REPO:-vnenapravo7-source/openflux-deploy}"
+REF="${OPENFLUX_DEPLOY_REF:-main}"
+UPSTREAM_REPO="${OPENFLUX_UPSTREAM_REPO:-https://github.com/p1neappleXpress/OpenFlux.git}"
+INSTALL_MODE="${OPENFLUX_INSTALL_MODE:-auto}"
+ROLE="${OPENFLUX_ROLE:-controller}"
+PORT="${OPENFLUX_PORT:-8088}"
+ADMIN_USER="${OPENFLUX_ADMIN_USER:-admin}"
+ADMIN_PASSWORD="${OPENFLUX_ADMIN_PASSWORD:-}"
+NODE_TOKEN="${OPENFLUX_NODE_TOKEN:-}"
+PREFIX=/opt/openflux-deploy
+CONFIG_DIR=/etc/openflux-deploy
+STATE_DIR=/var/lib/openflux-deploy
+
+say(){ printf '\033[1;36m[OpenFlux]\033[0m %s\n' "$*"; }
+fail(){ printf '\033[1;31m[OpenFlux] Ошибка:\033[0m %s\n' "$*" >&2; exit 1; }
+need_root(){ [ "$(id -u)" -eq 0 ] || fail "запустите установщик от root: sudo bash ..."; }
+have(){ command -v "$1" >/dev/null 2>&1; }
+random_hex(){ od -An -N "$1" -tx1 /dev/urandom | tr -d ' \n'; }
+escape_env(){ local v="$1"; v="${v//\\/\\\\}"; v="${v//\"/\\\"}"; printf '"%s"' "$v"; }
+
+usage(){ cat <<'EOF'
+OpenFlux Deploy
+  --mode systemd|docker   способ установки
+  --role controller|node standalone/центральная панель или подключаемая нода
+  --port PORT             HTTPS-порт панели (по умолчанию 8088)
+
+Переменные: OPENFLUX_ADMIN_USER, OPENFLUX_ADMIN_PASSWORD, OPENFLUX_NODE_TOKEN,
+OPENFLUX_INSTALL_MODE, OPENFLUX_ROLE, OPENFLUX_PORT.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --mode) INSTALL_MODE="${2:?}"; shift 2;;
+    --role) ROLE="${2:?}"; shift 2;;
+    --port) PORT="${2:?}"; shift 2;;
+    -h|--help) usage; exit 0;;
+    *) fail "неизвестный аргумент: $1";;
+  esac
+done
+
+need_root
+case "$ROLE" in controller|node) ;; *) fail "--role: controller или node";; esac
+case "$PORT" in *[!0-9]*|'') fail "порт должен быть числом";; esac
+[ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] || fail "порт вне диапазона"
+
+if [ "$INSTALL_MODE" = auto ]; then
+  if have docker && docker compose version >/dev/null 2>&1; then INSTALL_MODE=docker; else INSTALL_MODE=systemd; fi
+fi
+case "$INSTALL_MODE" in systemd|docker) ;; *) fail "--mode: systemd или docker";; esac
+
+if [ -z "$ADMIN_PASSWORD" ]; then ADMIN_PASSWORD="$(random_hex 12)"; GENERATED_PASSWORD=1; else GENERATED_PASSWORD=0; fi
+if [ -z "$NODE_TOKEN" ]; then NODE_TOKEN="$(random_hex 32)"; fi
+case "$ADMIN_USER$ADMIN_PASSWORD$NODE_TOKEN" in *$'\n'*|*$'\r'*) fail "логин, пароль и токен не должны содержать переносы строк";; esac
+
+install_packages(){
+  if have apt-get; then
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates curl git tar openssl python3 iptables >/dev/null
+  elif have dnf; then
+    dnf install -y ca-certificates curl git tar openssl python3 iptables >/dev/null
+  elif have apk; then
+    apk add --no-cache ca-certificates curl git tar openssl python3 iptables >/dev/null
+  else fail "поддерживаются apt, dnf и apk"; fi
+}
+
+fetch_source(){
+  local tmp archive
+  tmp="$(mktemp -d)"; archive="$tmp/source.tgz"
+  curl -fsSL --retry 3 "https://codeload.github.com/${REPO}/tar.gz/refs/heads/${REF}" -o "$archive"
+  tar -xzf "$archive" -C "$tmp"
+  rm -rf "$PREFIX/source.new"
+  mv "$tmp"/*/ "$PREFIX/source.new"
+  if [ -d "$PREFIX/source" ]; then rm -rf "$PREFIX/source.previous"; mv "$PREFIX/source" "$PREFIX/source.previous"; fi
+  mv "$PREFIX/source.new" "$PREFIX/source"
+  rm -rf "$tmp"
+}
+
+make_config(){
+  install -d -m 700 "$CONFIG_DIR" "$STATE_DIR" "$CONFIG_DIR/tls"
+  if [ ! -f "$CONFIG_DIR/config.json" ]; then
+    cat >"$CONFIG_DIR/config.json" <<'JSON'
+{
+  "enabled": false,
+  "transport": "yandex",
+  "url": "",
+  "mode": "l4",
+  "codec": "batched",
+  "local_ip": "",
+  "encryption_key_file": "",
+  "debug": false,
+  "auto_update": true
+}
+JSON
+    chmod 600 "$CONFIG_DIR/config.json"
+  fi
+  [ -f "$CONFIG_DIR/nodes.json" ] || { printf '[]\n' >"$CONFIG_DIR/nodes.json"; chmod 600 "$CONFIG_DIR/nodes.json"; }
+  if [ ! -s "$CONFIG_DIR/tls/cert.pem" ] || [ ! -s "$CONFIG_DIR/tls/key.pem" ]; then
+    local host ip san
+    host="$(hostname -f 2>/dev/null || hostname)"; ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    san="DNS:${host}"; [ -n "$ip" ] && san="$san,IP:$ip"
+    openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 825 \
+      -subj "/CN=$host" -addext "subjectAltName=$san" \
+      -keyout "$CONFIG_DIR/tls/key.pem" -out "$CONFIG_DIR/tls/cert.pem" >/dev/null 2>&1
+    chmod 600 "$CONFIG_DIR/tls/key.pem"
+  fi
+}
+
+install_go(){
+  local version arch json sha file tmp
+  version="$(awk '/^go /{print $2;exit}' "$PREFIX/source/go.mod")"
+  arch="$(uname -m)"; case "$arch" in x86_64) arch=amd64;; aarch64|arm64) arch=arm64;; *) fail "архитектура $arch не поддерживается";; esac
+  if have go && go version 2>/dev/null | grep -q "go${version}"; then return; fi
+  say "Устанавливаю Go $version с проверкой SHA-256"
+  tmp="$(mktemp -d)"; file="go${version}.linux-${arch}.tar.gz"
+  json="$(curl -fsSL 'https://go.dev/dl/?mode=json&include=all')"
+  sha="$(printf '%s' "$json" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=sys.argv[1]; print(next(f["sha256"] for r in d if r["version"]=="go"+v for f in r["files"] if f["filename"]=="go"+v+".linux-"+sys.argv[2]+".tar.gz"))' "$version" "$arch")"
+  curl -fsSL --retry 3 "https://go.dev/dl/$file" -o "$tmp/$file"
+  printf '%s  %s\n' "$sha" "$tmp/$file" | sha256sum -c - >/dev/null
+  rm -rf /usr/local/go; tar -C /usr/local -xzf "$tmp/$file"; ln -sf /usr/local/go/bin/go /usr/local/bin/go
+  rm -rf "$tmp"
+}
+
+write_env(){
+  umask 077
+  cat >"$CONFIG_DIR/panel.env" <<EOF
+OPENFLUX_ADMIN_USER=$(escape_env "$ADMIN_USER")
+OPENFLUX_ADMIN_PASSWORD=$(escape_env "$ADMIN_PASSWORD")
+OPENFLUX_NODE_TOKEN=$(escape_env "$NODE_TOKEN")
+OPENFLUX_LISTEN=:$PORT
+OPENFLUX_CONFIG=$CONFIG_DIR/config.json
+OPENFLUX_NODES=$CONFIG_DIR/nodes.json
+OPENFLUX_TLS_CERT=$CONFIG_DIR/tls/cert.pem
+OPENFLUX_TLS_KEY=$CONFIG_DIR/tls/key.pem
+OPENFLUX_VERSION_FILE=$STATE_DIR/upstream-version
+OPENFLUX_UPDATE_SCRIPT=/usr/local/lib/openflux-deploy/update.sh
+OPENFLUX_BINARY=$STATE_DIR/bin/openflux
+EOF
+}
+
+install_systemd(){
+  [ -d /run/systemd/system ] || fail "systemd не найден; используйте --mode docker"
+  install_go
+  say "Собираю OpenFlux и панель"
+  install -d -m 755 "$STATE_DIR/bin" /usr/local/lib/openflux-deploy
+  (cd "$PREFIX/source" && GOTOOLCHAIN=auto go build -trimpath -ldflags='-s -w' -o "$STATE_DIR/bin/openflux.new" .)
+  (cd "$PREFIX/source/deploy/panel" && GOTOOLCHAIN=auto go build -trimpath -ldflags='-s -w' -o /usr/local/bin/openflux-panel .)
+  chmod 755 "$STATE_DIR/bin/openflux.new" /usr/local/bin/openflux-panel
+  mv "$STATE_DIR/bin/openflux.new" "$STATE_DIR/bin/openflux"
+  git -C "$PREFIX/source" rev-parse HEAD >"$STATE_DIR/upstream-version" 2>/dev/null || printf 'bundled\n' >"$STATE_DIR/upstream-version"
+  install -m 755 "$PREFIX/source/deploy/update.sh" /usr/local/lib/openflux-deploy/update.sh
+  printf 'systemd\n' >"$CONFIG_DIR/install-mode"
+  cat >/etc/systemd/system/openflux-panel.service <<EOF
+[Unit]
+Description=OpenFlux exit node and control panel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=$CONFIG_DIR/panel.env
+ExecStart=/usr/local/bin/openflux-panel
+Restart=always
+RestartSec=3
+NoNewPrivileges=false
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=$CONFIG_DIR $STATE_DIR
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  cat >/etc/systemd/system/openflux-update.service <<'EOF'
+[Unit]
+Description=Update OpenFlux from upstream
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/openflux-deploy/panel.env
+ExecStart=/usr/local/lib/openflux-deploy/update.sh
+EOF
+  cat >/etc/systemd/system/openflux-update.timer <<'EOF'
+[Unit]
+Description=Daily OpenFlux upstream update check
+
+[Timer]
+OnBootSec=20min
+OnUnitActiveSec=1d
+RandomizedDelaySec=2h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now openflux-panel.service openflux-update.timer
+}
+
+install_docker(){
+  have docker || fail "Docker не установлен"
+  docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 не установлен"
+  say "Собираю Docker-образ"
+  cp "$PREFIX/source/deploy/docker-compose.yml" "$PREFIX/docker-compose.yml"
+  cp "$PREFIX/source/deploy/Dockerfile" "$PREFIX/Dockerfile"
+  cp "$PREFIX/source/deploy/entrypoint.sh" "$PREFIX/entrypoint.sh"
+  cp "$PREFIX/source/deploy/update.sh" "$PREFIX/update.sh"
+  cat >"$PREFIX/.env" <<EOF
+OPENFLUX_PORT=$PORT
+OPENFLUX_ADMIN_USER=$(escape_env "$ADMIN_USER")
+OPENFLUX_ADMIN_PASSWORD=$(escape_env "$ADMIN_PASSWORD")
+OPENFLUX_NODE_TOKEN=$(escape_env "$NODE_TOKEN")
+OPENFLUX_UPSTREAM_REPO=$(escape_env "$UPSTREAM_REPO")
+EOF
+  chmod 600 "$PREFIX/.env"
+  printf 'docker\n' >"$CONFIG_DIR/install-mode"
+  (cd "$PREFIX" && docker compose up -d --build)
+}
+
+install_packages
+install -d -m 755 "$PREFIX"
+fetch_source
+make_config
+write_env
+if [ "$INSTALL_MODE" = systemd ]; then install_systemd; else install_docker; fi
+
+FINGERPRINT="$(openssl x509 -in "$CONFIG_DIR/tls/cert.pem" -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':')"
+IP="$(hostname -I 2>/dev/null | awk '{print $1}')"; [ -n "$IP" ] || IP="SERVER_IP"
+say "Готово: https://$IP:$PORT"
+printf '  Логин: %s\n  Пароль: %s\n' "$ADMIN_USER" "$ADMIN_PASSWORD"
+if [ "$ROLE" = node ]; then
+  printf '\n  Данные для подключения ноды:\n  URL: https://%s:%s\n  Токен: %s\n  SHA-256: %s\n' "$IP" "$PORT" "$NODE_TOKEN" "$FINGERPRINT"
+fi
+[ "$GENERATED_PASSWORD" -eq 1 ] && say "Сохраните сгенерированный пароль: повторно он не показывается."
+say "Первый вход вызовет предупреждение о self-signed сертификате — сверьте SHA-256: $FINGERPRINT"
