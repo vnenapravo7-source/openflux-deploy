@@ -29,10 +29,12 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -o /tmp/openflux .
           cd deploy/panel
           CGO_ENABLED=0 go build -trimpath -o /tmp/openflux-panel .
+          /tmp/openflux-panel --version
       - name: Validate installer scripts
         run: |
           bash -n deploy.sh
           bash -n deploy/update.sh
+          bash -n deploy/panel-update.sh
           bash -n deploy/entrypoint.sh
 
   docker:
@@ -43,7 +45,7 @@ jobs:
         run: |
           mkdir -p /tmp/openflux-docker/source
           cp -a . /tmp/openflux-docker/source/
-          cp deploy/Dockerfile deploy/docker-compose.yml deploy/entrypoint.sh deploy/update.sh /tmp/openflux-docker/
+          cp deploy/Dockerfile deploy/docker-compose.yml deploy/entrypoint.sh deploy/update.sh deploy/panel-update.sh /tmp/openflux-docker/
       - name: Build image
         working-directory: /tmp/openflux-docker
         run: docker build -t openflux-deploy:ci .

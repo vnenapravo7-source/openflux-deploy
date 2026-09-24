@@ -43,7 +43,12 @@
         </div>
         <article class="card chart-card admin-only"><div class="card-head"><div><h2>Сетевой трафик сервера</h2><p>Последние 10 минут, все интерфейсы кроме loopback</p></div><div class="legend"><span><i class="rx"></i>RX</span><span><i class="tx"></i>TX</span></div></div><canvas id="trafficChart" height="250"></canvas></article>
         <article class="card"><div class="card-head"><div><h2>Подключения</h2><p>Каждое запускается как отдельный процесс OpenFlux</p></div><button class="text-btn" data-goto="connections">Открыть все</button></div><div id="overviewConnections" class="connection-list"></div></article>
-        <article class="card admin-only maintenance"><div class="card-head"><div><h2>Обслуживание</h2><p>Обновление серверного бинарника из основного репозитория</p></div><button id="updateBtn" class="secondary small">Проверить обновление</button></div><label class="check"><input id="autoUpdate" type="checkbox"><span>Автоматически обновлять из p1neappleXpress/OpenFlux</span></label></article>
+        <article class="card admin-only maintenance"><div class="card-head"><div><h2>Обслуживание</h2><p>Обновления не затрагивают пользователей и подключения</p></div></div>
+          <div class="maintenance-row"><div><b>Серверная часть</b><small>p1neappleXpress/OpenFlux · основной репозиторий</small></div><button id="updateBtn" class="secondary small">Обновить сервер</button></div>
+          <label class="check"><input id="autoUpdate" type="checkbox"><span>Автоматически обновлять серверную часть</span></label>
+          <div class="maintenance-row"><div><b>Веб-панель</b><small>vnenapravo7-source/openflux-deploy · после обновления потребуется повторный вход</small></div><button id="updatePanelBtn" class="secondary small">Обновить панель</button></div>
+          <small id="panelUpdateStatus" role="status"></small>
+        </article>
       </section>
       <section id="view-connections" class="view">
         <article class="card"><div class="card-head"><div><h2>Подключения</h2><p>Можно создать несколько подключений для одного пользователя</p></div><button id="showConnectionForm" class="primary small">+ Создать</button></div><div id="connectionsList" class="connection-list"></div></article>

@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
       args:
         OPENFLUX_UPSTREAM_REPO: ${OPENFLUX_UPSTREAM_REPO:-https://github.com/p1neappleXpress/OpenFlux.git}
+        OPENFLUX_DEPLOY_REVISION: ${OPENFLUX_DEPLOY_REVISION:-bundled}
     image: openflux-deploy:local
     container_name: openflux-deploy
     restart: unless-stopped
@@ -27,6 +28,10 @@ services:
       OPENFLUX_BINARY: /var/lib/openflux-deploy/bin/openflux
       OPENFLUX_VERSION_FILE: /var/lib/openflux-deploy/upstream-version
       OPENFLUX_UPDATE_SCRIPT: /usr/local/lib/openflux-deploy/update.sh
+      OPENFLUX_PANEL_UPDATE_SCRIPT: /usr/local/lib/openflux-deploy/panel-update.sh
+      OPENFLUX_PANEL_REVISION_FILE: /var/lib/openflux-deploy/panel-revision
+      OPENFLUX_DEPLOY_REPO: ${OPENFLUX_DEPLOY_REPO:-vnenapravo7-source/openflux-deploy}
+      OPENFLUX_DEPLOY_REF: ${OPENFLUX_DEPLOY_REF:-main}
       OPENFLUX_UPSTREAM_REPO: ${OPENFLUX_UPSTREAM_REPO:-https://github.com/p1neappleXpress/OpenFlux.git}
       OPENFLUX_AUTO_UPDATE_INTERVAL: 24h
       OPENFLUX_AUTO_UPDATE_DELAY: 20m

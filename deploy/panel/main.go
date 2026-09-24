@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const panelVersion = "0.2.0"
+const panelVersion = "0.3.0"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -421,6 +421,15 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
+	case r.Method == http.MethodPost && path == "/api/update-panel":
+		if !requireAdmin(w, u) || !requireAction(w, r) {
+			return
+		}
+		if err := s.mgr.updatePanel(); err != nil {
+			apiError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
 	default:
 		http.NotFound(w, r)
 	}
@@ -455,6 +464,10 @@ func env(name, fallback string) string {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println("OpenFlux panel " + panelVersion)
+		return
+	}
 	userName := env("OPENFLUX_ADMIN_USER", "admin")
 	adminPassword := os.Getenv("OPENFLUX_ADMIN_PASSWORD")
 	users, err := loadUsers(env("OPENFLUX_USERS", "/etc/openflux-deploy/users.json"), userName, adminPassword)

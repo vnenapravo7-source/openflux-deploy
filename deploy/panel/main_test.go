@@ -107,12 +107,24 @@ func TestStateRequiresSessionAndHidesOtherConnections(t *testing.T) {
 	otherRestart.Header.Set("X-OpenFlux-Action", "1")
 	denied := httptest.NewRecorder()
 	handler.ServeHTTP(denied, otherRestart)
-	if denied.Code != http.StatusNotFound { t.Fatalf("other user's connection action: %d", denied.Code) }
+	if denied.Code != http.StatusNotFound {
+		t.Fatalf("other user's connection action: %d", denied.Code)
+	}
 	usersRequest := httptest.NewRequest(http.MethodGet, "/api/users", nil)
 	usersRequest.AddCookie(&http.Cookie{Name: "of_session", Value: "valid"})
 	usersResponse := httptest.NewRecorder()
 	handler.ServeHTTP(usersResponse, usersRequest)
-	if usersResponse.Code != http.StatusForbidden { t.Fatalf("user listing: %d", usersResponse.Code) }
+	if usersResponse.Code != http.StatusForbidden {
+		t.Fatalf("user listing: %d", usersResponse.Code)
+	}
+	panelUpdate := httptest.NewRequest(http.MethodPost, "/api/update-panel", nil)
+	panelUpdate.AddCookie(&http.Cookie{Name: "of_session", Value: "valid"})
+	panelUpdate.Header.Set("X-OpenFlux-Action", "1")
+	panelResponse := httptest.NewRecorder()
+	handler.ServeHTTP(panelResponse, panelUpdate)
+	if panelResponse.Code != http.StatusForbidden {
+		t.Fatalf("panel update allowed for ordinary user: %d", panelResponse.Code)
+	}
 }
 
 func TestLegacyConnectionMigration(t *testing.T) {

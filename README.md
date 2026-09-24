@@ -45,6 +45,7 @@ rm /tmp/openflux-deploy.sh
 - L3 и L4, batched/zstd и legacy LZ4;
 - подключение удалённых серверов как нод;
 - ручная и ежедневная проверка обновлений upstream с сохранением конфигурации и резервной копией бинарника;
+- отдельная кнопка **Обновить панель**: сборка актуальной версии из `vnenapravo7-source/openflux-deploy`, проверка и перезапуск панели в systemd или Docker;
 - ссылки на [iOS TestFlight](https://testflight.apple.com/join/BwnAcdus) и [Android-клиент](https://github.com/damnurmum/OpenFlux-Android/releases/latest).
 
 > График показывает суммарный трафик сетевых интерфейсов сервера, кроме loopback. Это сознательно лёгкий мониторинг без Prometheus и базы временных рядов.
@@ -71,6 +72,10 @@ sudo bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/o
 
 Автообновление можно выключить в панели. Ручная кнопка обновления работает независимо от расписания.
 
+Кнопка **Обновить панель** доступна администратору отдельно от обновления серверного OpenFlux. Панель загружает свой исходный код из `vnenapravo7-source/openflux-deploy:main`, собирает новый бинарник, проверяет его и сохраняет предыдущий как `openflux-panel.rollback`. Затем панель перезапускается; после этого нужно войти снова. Пользователи, подключения, ноды и TLS-сертификат остаются в постоянных каталогах. В Docker обновлённый бинарник хранится в `/var/lib/openflux-deploy/bin`, поэтому сохраняется при перезапуске контейнера. Первое включение этой функции на ранее установленном сервере требует повторно запустить установщик, чтобы обновить сервис и Docker-образ.
+
+Если новая панель не запускается, верните `/var/lib/openflux-deploy/bin/openflux-panel.rollback` на место `openflux-panel`, а `panel-revision.rollback` — на место `panel-revision`, затем перезапустите `openflux-panel.service` или Docker-контейнер.
+
 ## Файлы на сервере
 
 | Путь | Назначение |
@@ -81,6 +86,7 @@ sudo bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/o
 | `/etc/openflux-deploy/nodes.json` | подключённые ноды и токены (`0600`) |
 | `/etc/openflux-deploy/panel.env` | учётные данные панели (`0600`) |
 | `/var/lib/openflux-deploy/` | рабочий бинарник, версия и резервная копия |
+| `/var/lib/openflux-deploy/bin/openflux-panel` | бинарник панели и резервная копия после её обновления |
 | `/opt/openflux-deploy/` | установочные файлы и Docker Compose |
 
 ## Диагностика

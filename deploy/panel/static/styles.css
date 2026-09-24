@@ -14,3 +14,7 @@
 @media(max-width:750px){.connection-main,.user-row{align-items:flex-start;flex-direction:column}.connection-main .status{max-width:100%}.header-actions{flex-wrap:wrap}.clients{display:grid;margin-top:10px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:450px){.stats{grid-template-columns:1fr}header{gap:12px;flex-direction:column}.connection-actions button{flex:1}}
 @media(max-width:950px){.clients{display:grid}}
+.maintenance-row{display:flex;justify-content:space-between;align-items:center;gap:15px;border-top:1px solid var(--line);padding:15px 0}
+.maintenance-row b,.maintenance-row small{display:block}.maintenance-row b{font-size:12px}.maintenance-row small{font-size:10px;color:var(--muted);margin-top:4px}
+.maintenance-row button{flex:none}.maintenance .check{margin:0 0 16px}.maintenance #panelUpdateStatus{display:block;color:var(--amber);overflow-wrap:anywhere}
+button:disabled{opacity:.5;cursor:not-allowed}

@@ -89,20 +89,24 @@ type processState struct {
 }
 
 type Manager struct {
-	mu              sync.Mutex
-	legacyPath      string
-	connectionsPath string
-	nodesPath       string
-	binaryPath      string
-	versionPath     string
-	updatePath      string
-	connections     []Connection
-	processes       map[string]*processState
-	nodes           []Node
-	traffic         []TrafficPoint
-	autoUpdate      bool
-	updating        bool
-	updateError     string
+	mu                sync.Mutex
+	legacyPath        string
+	connectionsPath   string
+	nodesPath         string
+	binaryPath        string
+	versionPath       string
+	updatePath        string
+	panelUpdatePath   string
+	panelRevisionPath string
+	connections       []Connection
+	processes         map[string]*processState
+	nodes             []Node
+	traffic           []TrafficPoint
+	autoUpdate        bool
+	updating          bool
+	updateError       string
+	updatingPanel     bool
+	panelUpdateError  string
 }
 
 func defaults() Config { return Config{Transport: "yandex", Mode: "l4", Codec: "batched"} }
@@ -142,7 +146,7 @@ func validateConnection(c Connection) error {
 }
 
 func NewManager(legacyPath, connectionsPath, nodesPath, binaryPath, versionPath, updatePath, adminID string) (*Manager, error) {
-	m := &Manager{legacyPath: legacyPath, connectionsPath: connectionsPath, nodesPath: nodesPath, binaryPath: binaryPath, versionPath: versionPath, updatePath: updatePath, processes: map[string]*processState{}, nodes: []Node{}, connections: []Connection{}, traffic: []TrafficPoint{}, autoUpdate: true}
+	m := &Manager{legacyPath: legacyPath, connectionsPath: connectionsPath, nodesPath: nodesPath, binaryPath: binaryPath, versionPath: versionPath, updatePath: updatePath, panelUpdatePath: env("OPENFLUX_PANEL_UPDATE_SCRIPT", "/usr/local/lib/openflux-deploy/panel-update.sh"), panelRevisionPath: env("OPENFLUX_PANEL_REVISION_FILE", "/var/lib/openflux-deploy/panel-revision"), processes: map[string]*processState{}, nodes: []Node{}, connections: []Connection{}, traffic: []TrafficPoint{}, autoUpdate: true}
 	if raw, err := os.ReadFile(legacyPath); err == nil {
 		var old Config
 		if err := json.Unmarshal(raw, &old); err != nil {
@@ -567,14 +571,27 @@ func (m *Manager) version() string {
 	return strings.TrimSpace(string(raw))
 }
 
+func (m *Manager) panelRevision() string {
+	if m.panelRevisionPath == "" {
+		return "unknown"
+	}
+	raw, err := os.ReadFile(m.panelRevisionPath)
+	if err != nil {
+		return "unknown"
+	}
+	return strings.TrimSpace(string(raw))
+}
+
 func (m *Manager) state(user User) map[string]any {
-	state := map[string]any{"me": UserView{user.ID, user.Username, user.Role}, "connections": m.connectionViews(user), "upstream_version": m.version(), "panel_version": panelVersion}
+	state := map[string]any{"me": UserView{user.ID, user.Username, user.Role}, "connections": m.connectionViews(user), "upstream_version": m.version(), "panel_version": panelVersion, "panel_revision": m.panelRevision()}
 	if user.Role == "admin" {
 		m.mu.Lock()
 		state["traffic"] = append([]TrafficPoint{}, m.traffic...)
 		state["auto_update"] = m.autoUpdate
 		state["updating"] = m.updating
 		state["update_error"] = m.updateError
+		state["updating_panel"] = m.updatingPanel
+		state["panel_update_error"] = m.panelUpdateError
 		m.mu.Unlock()
 		state["nodes"] = m.nodeViews()
 	}
@@ -595,7 +612,7 @@ func (m *Manager) setAutoUpdate(value bool) error {
 
 func (m *Manager) update() error {
 	m.mu.Lock()
-	if m.updating {
+	if m.updating || m.updatingPanel {
 		m.mu.Unlock()
 		return fmt.Errorf("update already running")
 	}
@@ -610,6 +627,29 @@ func (m *Manager) update() error {
 			m.updateError = fmt.Sprintf("%v: %s", err, strings.TrimSpace(string(out)))
 		}
 		m.updating = false
+		m.mu.Unlock()
+	}()
+	return nil
+}
+
+func (m *Manager) updatePanel() error {
+	m.mu.Lock()
+	if m.updating || m.updatingPanel {
+		m.mu.Unlock()
+		return fmt.Errorf("update already running")
+	}
+	m.updatingPanel = true
+	m.panelUpdateError = ""
+	m.mu.Unlock()
+	go func() {
+		cmd := exec.Command(m.panelUpdatePath)
+		cmd.Env = append(os.Environ(), fmt.Sprintf("OPENFLUX_PANEL_PID=%d", os.Getpid()))
+		out, err := cmd.CombinedOutput()
+		m.mu.Lock()
+		if err != nil {
+			m.panelUpdateError = fmt.Sprintf("%v: %s", err, strings.TrimSpace(string(out)))
+		}
+		m.updatingPanel = false
 		m.mu.Unlock()
 	}()
 	return nil

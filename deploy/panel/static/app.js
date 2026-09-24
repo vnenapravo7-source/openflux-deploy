@@ -75,8 +75,8 @@ function render(){
   $("#accountLabel").textContent=`${state.me.username} · ${admin?"АДМИНИСТРАТОР":"ПОЛЬЗОВАТЕЛЬ"}`;
   $("#connectionCount").textContent=connections.length;$("#connectionTotal").textContent=connections.length;$("#runningTotal").textContent=`${running} работают`;
   const pill=$("#statusPill");pill.className=`status ${running?'online':'offline'}`;pill.innerHTML=`<i></i>${running} / ${connections.length} работают`;
-  $("#version").textContent=(state.upstream_version||"unknown").slice(0,12);$("#panelVersion").textContent=`панель ${state.panel_version}${state.updating?" · обновляется…":""}`;
-  if(admin){const point=(state.traffic||[]).at(-1)||{};$("#rxNow").textContent=`${bytes(point.rx)}/с`;$("#txNow").textContent=`${bytes(point.tx)}/с`;$("#autoUpdate").checked=!!state.auto_update;drawChart(state.traffic||[]);renderNodes(state.nodes||[])}
+  $("#version").textContent=(state.upstream_version||"unknown").slice(0,12);$("#panelVersion").textContent=`панель ${state.panel_version} · ${(state.panel_revision||"unknown").slice(0,8)}`;
+  if(admin){const point=(state.traffic||[]).at(-1)||{};$("#rxNow").textContent=`${bytes(point.rx)}/с`;$("#txNow").textContent=`${bytes(point.tx)}/с`;$("#autoUpdate").checked=!!state.auto_update;$("#updateBtn").disabled=!!state.updating||!!state.updating_panel;$("#updatePanelBtn").disabled=!!state.updating||!!state.updating_panel;$("#panelUpdateStatus").textContent=state.panel_update_error|| (state.updating_panel?"Панель собирается и будет перезапущена…":state.update_error||"");drawChart(state.traffic||[]);renderNodes(state.nodes||[])}
   renderConnections();if(activeView==="users")renderUsers();
 }
 async function refresh(){try{state=await api("/api/state");render();}catch(e){if(e.status===401)showLogin();else if(state)toast(`Нет связи с панелью: ${e.message}`,true);else showLogin();}}
@@ -122,6 +122,7 @@ $("#logoutBtn").onclick=async()=>{try{await api("/api/logout",{method:"POST"})}c
 $("#userForm").onsubmit=async event=>{event.preventDefault();try{await api("/api/users",{method:"POST",...json({username:$("#userName").value.trim(),password:$("#userPassword").value,role:$("#userRole").value})});event.target.reset();toast("Пользователь создан");await loadUsers()}catch(e){toast(e.message,true)}};
 $("#autoUpdate").onchange=async event=>{try{await api("/api/settings",{method:"PUT",...json({auto_update:event.target.checked})});toast("Настройка обновления сохранена")}catch(e){event.target.checked=!event.target.checked;toast(e.message,true)}};
 $("#updateBtn").onclick=async()=>{try{await api("/api/update",{method:"POST"});toast("Обновление запущено")}catch(e){toast(e.message,true)}};
+$("#updatePanelBtn").onclick=async()=>{try{await api("/api/update-panel",{method:"POST"});toast("Обновление панели запущено. После перезапуска войдите снова.");await refresh()}catch(e){toast(e.message,true)}};
 $("#showAddNode").onclick=()=>$("#nodeForm").classList.remove("hidden");$("#cancelNode").onclick=()=>$("#nodeForm").classList.add("hidden");
 $("#nodeForm").onsubmit=async event=>{event.preventDefault();try{await api("/api/nodes",{method:"POST",...json({name:$("#nodeName").value.trim(),base_url:$("#nodeUrl").value.trim(),token:$("#nodeToken").value,tls_sha256:$("#nodeFingerprint").value.trim()})});event.target.reset();event.target.classList.add("hidden");toast("Нода подключена");await refresh()}catch(e){toast(e.message,true)}};
 addEventListener("resize",()=>state?.me.role==="admin"&&drawChart(state.traffic||[]));

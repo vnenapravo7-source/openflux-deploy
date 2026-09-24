@@ -78,9 +78,11 @@ install_packages(){
 }
 
 fetch_source(){
-  local tmp archive
+  local tmp archive archive_ref
   tmp="$(mktemp -d)"; archive="$tmp/source.tgz"
-  curl -fsSL --retry 3 "https://codeload.github.com/${REPO}/tar.gz/refs/heads/${REF}" -o "$archive"
+  DEPLOY_REVISION="$(git ls-remote "https://github.com/${REPO}.git" "refs/heads/${REF}" 2>/dev/null | awk '{print $1}' || true)"
+  archive_ref="${DEPLOY_REVISION:-refs/heads/${REF}}"
+  curl -fsSL --retry 3 "https://codeload.github.com/${REPO}/tar.gz/${archive_ref}" -o "$archive"
   tar -xzf "$archive" -C "$tmp"
   rm -rf "$PREFIX/source.new"
   mv "$tmp"/*/ "$PREFIX/source.new"
@@ -150,6 +152,10 @@ OPENFLUX_TLS_CERT=$CONFIG_DIR/tls/cert.pem
 OPENFLUX_TLS_KEY=$CONFIG_DIR/tls/key.pem
 OPENFLUX_VERSION_FILE=$STATE_DIR/upstream-version
 OPENFLUX_UPDATE_SCRIPT=/usr/local/lib/openflux-deploy/update.sh
+OPENFLUX_PANEL_UPDATE_SCRIPT=/usr/local/lib/openflux-deploy/panel-update.sh
+OPENFLUX_PANEL_REVISION_FILE=$STATE_DIR/panel-revision
+OPENFLUX_DEPLOY_REPO=$(escape_env "$REPO")
+OPENFLUX_DEPLOY_REF=$(escape_env "$REF")
 OPENFLUX_BINARY=$STATE_DIR/bin/openflux
 EOF
 }
@@ -160,11 +166,15 @@ install_systemd(){
   say "Собираю OpenFlux и панель"
   install -d -m 755 "$STATE_DIR/bin" /usr/local/lib/openflux-deploy
   (cd "$PREFIX/source" && GOTOOLCHAIN=auto go build -trimpath -ldflags='-s -w' -o "$STATE_DIR/bin/openflux.new" .)
-  (cd "$PREFIX/source/deploy/panel" && GOTOOLCHAIN=auto go build -trimpath -ldflags='-s -w' -o /usr/local/bin/openflux-panel .)
-  chmod 755 "$STATE_DIR/bin/openflux.new" /usr/local/bin/openflux-panel
+  (cd "$PREFIX/source/deploy/panel" && GOTOOLCHAIN=auto go build -trimpath -ldflags='-s -w' -o "$STATE_DIR/bin/openflux-panel.new" .)
+  chmod 755 "$STATE_DIR/bin/openflux.new" "$STATE_DIR/bin/openflux-panel.new"
   mv "$STATE_DIR/bin/openflux.new" "$STATE_DIR/bin/openflux"
+  if [ -f "$STATE_DIR/bin/openflux-panel" ]; then cp -p "$STATE_DIR/bin/openflux-panel" "$STATE_DIR/bin/openflux-panel.rollback"; fi
+  mv "$STATE_DIR/bin/openflux-panel.new" "$STATE_DIR/bin/openflux-panel"
+  printf '%s\n' "${DEPLOY_REVISION:-bundled}" >"$STATE_DIR/panel-revision"
   git -C "$PREFIX/source" rev-parse HEAD >"$STATE_DIR/upstream-version" 2>/dev/null || printf 'bundled\n' >"$STATE_DIR/upstream-version"
   install -m 755 "$PREFIX/source/deploy/update.sh" /usr/local/lib/openflux-deploy/update.sh
+  install -m 755 "$PREFIX/source/deploy/panel-update.sh" /usr/local/lib/openflux-deploy/panel-update.sh
   printf 'systemd\n' >"$CONFIG_DIR/install-mode"
   cat >/etc/systemd/system/openflux-panel.service <<EOF
 [Unit]
@@ -175,7 +185,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=$CONFIG_DIR/panel.env
-ExecStart=/usr/local/bin/openflux-panel
+ExecStart=$STATE_DIR/bin/openflux-panel
 Restart=always
 RestartSec=3
 NoNewPrivileges=false
@@ -212,7 +222,9 @@ Persistent=true
 WantedBy=timers.target
 EOF
   systemctl daemon-reload
-  systemctl enable --now openflux-panel.service openflux-update.timer
+  systemctl enable openflux-panel.service openflux-update.timer
+  systemctl restart openflux-panel.service
+  systemctl start openflux-update.timer
 }
 
 install_docker(){
@@ -223,19 +235,25 @@ install_docker(){
   cp "$PREFIX/source/deploy/Dockerfile" "$PREFIX/Dockerfile"
   cp "$PREFIX/source/deploy/entrypoint.sh" "$PREFIX/entrypoint.sh"
   cp "$PREFIX/source/deploy/update.sh" "$PREFIX/update.sh"
+  cp "$PREFIX/source/deploy/panel-update.sh" "$PREFIX/panel-update.sh"
   if [ "$EXISTING_USERS" -eq 0 ]; then cat >"$PREFIX/.env" <<EOF
 OPENFLUX_PORT=$PORT
 OPENFLUX_ADMIN_USER=$(escape_env "$ADMIN_USER")
 OPENFLUX_ADMIN_PASSWORD=$(escape_env "$ADMIN_PASSWORD")
 OPENFLUX_NODE_TOKEN=$(escape_env "$NODE_TOKEN")
 OPENFLUX_UPSTREAM_REPO=$(escape_env "$UPSTREAM_REPO")
+OPENFLUX_DEPLOY_REPO=$(escape_env "$REPO")
+OPENFLUX_DEPLOY_REF=$(escape_env "$REF")
 EOF
     chmod 600 "$PREFIX/.env"
   else
     [ -f "$PREFIX/.env" ] || fail "существующая Docker-установка без .env; восстановите файл перед переустановкой"
   fi
   printf 'docker\n' >"$CONFIG_DIR/install-mode"
-  (cd "$PREFIX" && docker compose up -d --build)
+  export OPENFLUX_DEPLOY_REVISION="${DEPLOY_REVISION:-bundled}"
+  (cd "$PREFIX" && docker compose build)
+  touch "$STATE_DIR/panel-seed-next-start"
+  (cd "$PREFIX" && docker compose up -d --no-build --force-recreate)
 }
 
 install_packages
