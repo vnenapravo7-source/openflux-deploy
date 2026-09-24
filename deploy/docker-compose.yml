@@ -36,8 +36,8 @@ services:
       OPENFLUX_DEPLOY_REPO: ${OPENFLUX_DEPLOY_REPO:-vnenapravo7-source/openflux-deploy}
       OPENFLUX_DEPLOY_REF: ${OPENFLUX_DEPLOY_REF:-main}
       OPENFLUX_UPSTREAM_REPO: ${OPENFLUX_UPSTREAM_REPO:-https://github.com/p1neappleXpress/OpenFlux.git}
-      OPENFLUX_AUTO_UPDATE_INTERVAL: 24h
-      OPENFLUX_AUTO_UPDATE_DELAY: 20m
+      OPENFLUX_AUTO_UPDATE_INTERVAL: 6h
+      OPENFLUX_AUTO_UPDATE_DELAY: 2m
     volumes:
       - /etc/openflux-deploy:/etc/openflux-deploy
       - /var/lib/openflux-deploy:/var/lib/openflux-deploy
