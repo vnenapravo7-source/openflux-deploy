@@ -16,18 +16,22 @@ export GOCACHE="${GOCACHE:-$STATE_DIR/go-cache}"
 export GOMODCACHE="${GOMODCACHE:-$STATE_DIR/go-mod}"
 export GOPATH="${GOPATH:-$STATE_DIR/go-path}"
 install -d -m 755 "$STATE_DIR/bin"
+command -v timeout >/dev/null || { say 'timeout command is required'; exit 1; }
 
-LATEST="$(git ls-remote "https://github.com/$REPO.git" "refs/heads/$REF" | awk '{print $1}')"
+say 'checking the latest panel revision'
+LATEST="$(timeout 2m git ls-remote "https://github.com/$REPO.git" "refs/heads/$REF" | awk '{print $1}')"
 [ -n "$LATEST" ] || { say 'cannot resolve deploy branch'; exit 1; }
 CURRENT="$(cat "$REVISION_FILE" 2>/dev/null || true)"
-if [ "$LATEST" = "$CURRENT" ]; then say "already current ($LATEST)"; exit 0; fi
+if [ "$LATEST" = "$CURRENT" ] && [ "${1:-}" != "--force" ]; then say "already current ($LATEST)"; exit 0; fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-say "building panel from $REPO@$LATEST"
-git clone --quiet --depth 1 --single-branch --branch "$REF" "https://github.com/$REPO.git" "$TMP/source"
+say "downloading panel source from $REPO@$LATEST"
+timeout 3m git clone --depth 1 --single-branch --branch "$REF" "https://github.com/$REPO.git" "$TMP/source"
 CHECKED_OUT="$(git -C "$TMP/source" rev-parse HEAD)"
-(cd "$TMP/source/deploy/panel" && GOTOOLCHAIN=auto CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$TMP/openflux-panel" .)
+say 'building panel (up to 10 minutes)'
+(cd "$TMP/source/deploy/panel" && timeout 10m env GOTOOLCHAIN=auto CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$TMP/openflux-panel" .)
+say 'checking the new binary'
 "$TMP/openflux-panel" --version | grep -q '^OpenFlux panel '
 
 if [ -f "$PANEL_BIN" ]; then cp -p "$PANEL_BIN" "$PANEL_BIN.rollback"; fi
@@ -42,11 +46,21 @@ say "installed $CHECKED_OUT; previous binary: $PANEL_BIN.rollback"
 # back using the newly installed binary. A manual script run does not kill its
 # invoking shell.
 PID="${OPENFLUX_PANEL_PID:-}"
-if [[ "$PID" =~ ^[0-9]+$ ]] && [ "$PID" -gt 1 ]; then
+if [[ "$PID" =~ ^[0-9]+$ ]] && [ "$PID" -ge 1 ]; then
   EXECUTABLE="$(readlink "/proc/$PID/exe" 2>/dev/null || true)"
   case "$EXECUTABLE" in
-    */openflux-panel|*/openflux-panel\ \(deleted\)) say "restarting panel pid $PID"; kill -TERM "$PID";;
-    *) say 'panel process changed; restart the service/container manually';;
+    */openflux-panel|*/openflux-panel\ \(deleted\))
+      say "restarting panel pid $PID"
+      kill -TERM "$PID"
+      if [ "$PID" -eq 1 ] && [ -f /.dockerenv ]; then
+        sleep 2
+        if kill -0 1 2>/dev/null; then
+          say 'PID 1 ignored SIGTERM; stopping container to trigger Docker restart'
+          kill -KILL 1
+        fi
+      fi
+      ;;
+    *) say 'panel process changed; restart the service/container manually'; exit 1;;
   esac
 else
   say 'restart the panel service/container to apply the new binary'

@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -89,24 +90,25 @@ type processState struct {
 }
 
 type Manager struct {
-	mu                sync.Mutex
-	legacyPath        string
-	connectionsPath   string
-	nodesPath         string
-	binaryPath        string
-	versionPath       string
-	updatePath        string
-	panelUpdatePath   string
-	panelRevisionPath string
-	connections       []Connection
-	processes         map[string]*processState
-	nodes             []Node
-	traffic           []TrafficPoint
-	autoUpdate        bool
-	updating          bool
-	updateError       string
-	updatingPanel     bool
-	panelUpdateError  string
+	mu                 sync.Mutex
+	legacyPath         string
+	connectionsPath    string
+	nodesPath          string
+	binaryPath         string
+	versionPath        string
+	updatePath         string
+	panelUpdatePath    string
+	panelRevisionPath  string
+	panelUpdateLogPath string
+	connections        []Connection
+	processes          map[string]*processState
+	nodes              []Node
+	traffic            []TrafficPoint
+	autoUpdate         bool
+	updating           bool
+	updateError        string
+	updatingPanel      bool
+	panelUpdateError   string
 }
 
 func defaults() Config { return Config{Transport: "yandex", Mode: "l4", Codec: "batched"} }
@@ -146,7 +148,7 @@ func validateConnection(c Connection) error {
 }
 
 func NewManager(legacyPath, connectionsPath, nodesPath, binaryPath, versionPath, updatePath, adminID string) (*Manager, error) {
-	m := &Manager{legacyPath: legacyPath, connectionsPath: connectionsPath, nodesPath: nodesPath, binaryPath: binaryPath, versionPath: versionPath, updatePath: updatePath, panelUpdatePath: env("OPENFLUX_PANEL_UPDATE_SCRIPT", "/usr/local/lib/openflux-deploy/panel-update.sh"), panelRevisionPath: env("OPENFLUX_PANEL_REVISION_FILE", "/var/lib/openflux-deploy/panel-revision"), processes: map[string]*processState{}, nodes: []Node{}, connections: []Connection{}, traffic: []TrafficPoint{}, autoUpdate: true}
+	m := &Manager{legacyPath: legacyPath, connectionsPath: connectionsPath, nodesPath: nodesPath, binaryPath: binaryPath, versionPath: versionPath, updatePath: updatePath, panelUpdatePath: env("OPENFLUX_PANEL_UPDATE_SCRIPT", "/usr/local/lib/openflux-deploy/panel-update.sh"), panelRevisionPath: env("OPENFLUX_PANEL_REVISION_FILE", "/var/lib/openflux-deploy/panel-revision"), panelUpdateLogPath: env("OPENFLUX_PANEL_UPDATE_LOG", "/var/lib/openflux-deploy/panel-update.log"), processes: map[string]*processState{}, nodes: []Node{}, connections: []Connection{}, traffic: []TrafficPoint{}, autoUpdate: true}
 	if raw, err := os.ReadFile(legacyPath); err == nil {
 		var old Config
 		if err := json.Unmarshal(raw, &old); err != nil {
@@ -593,6 +595,7 @@ func (m *Manager) state(user User) map[string]any {
 		state["updating_panel"] = m.updatingPanel
 		state["panel_update_error"] = m.panelUpdateError
 		m.mu.Unlock()
+		state["panel_update_log"] = tailFile(m.panelUpdateLogPath, 8192)
 		state["nodes"] = m.nodeViews()
 	}
 	return state
@@ -641,18 +644,65 @@ func (m *Manager) updatePanel() error {
 	m.updatingPanel = true
 	m.panelUpdateError = ""
 	m.mu.Unlock()
+	if err := os.MkdirAll(filepath.Dir(m.panelUpdateLogPath), 0700); err != nil {
+		m.mu.Lock()
+		m.updatingPanel = false
+		m.panelUpdateError = err.Error()
+		m.mu.Unlock()
+		return err
+	}
+	logFile, err := os.OpenFile(m.panelUpdateLogPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	if err != nil {
+		m.mu.Lock()
+		m.updatingPanel = false
+		m.panelUpdateError = err.Error()
+		m.mu.Unlock()
+		return err
+	}
+	cmd := exec.Command(m.panelUpdatePath, "--force")
+	cmd.Env = append(os.Environ(), fmt.Sprintf("OPENFLUX_PANEL_PID=%d", os.Getpid()))
+	cmd.Stdout, cmd.Stderr = logFile, logFile
+	if err := cmd.Start(); err != nil {
+		logFile.Close()
+		m.mu.Lock()
+		m.updatingPanel = false
+		m.panelUpdateError = err.Error()
+		m.mu.Unlock()
+		return err
+	}
 	go func() {
-		cmd := exec.Command(m.panelUpdatePath)
-		cmd.Env = append(os.Environ(), fmt.Sprintf("OPENFLUX_PANEL_PID=%d", os.Getpid()))
-		out, err := cmd.CombinedOutput()
+		err := cmd.Wait()
+		logFile.Close()
 		m.mu.Lock()
 		if err != nil {
-			m.panelUpdateError = fmt.Sprintf("%v: %s", err, strings.TrimSpace(string(out)))
+			m.panelUpdateError = err.Error()
 		}
 		m.updatingPanel = false
 		m.mu.Unlock()
 	}()
 	return nil
+}
+
+func tailFile(path string, limit int64) string {
+	if path == "" || limit <= 0 {
+		return ""
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return ""
+	}
+	if info.Size() > limit {
+		if _, err := f.Seek(info.Size()-limit, io.SeekStart); err != nil {
+			return ""
+		}
+	}
+	raw, _ := io.ReadAll(io.LimitReader(f, limit))
+	return strings.ToValidUTF8(string(raw), "")
 }
 
 func normalizeFingerprint(v string) string {

@@ -17,6 +17,7 @@
 .maintenance-row{display:flex;justify-content:space-between;align-items:center;gap:15px;border-top:1px solid var(--line);padding:15px 0}
 .maintenance-row b,.maintenance-row small{display:block}.maintenance-row b{font-size:12px}.maintenance-row small{font-size:10px;color:var(--muted);margin-top:4px}
 .maintenance-row button{flex:none}.maintenance .check{margin:0 0 16px}.maintenance #panelUpdateStatus{display:block;color:var(--amber);overflow-wrap:anywhere}
+.panel-update-log{max-height:220px;overflow:auto;margin:12px 0 0;padding:12px;border:1px solid var(--line);border-radius:9px;background:#080c11;color:#a9d8c7;font:11px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
 button:disabled{opacity:.5;cursor:not-allowed}
 .account-card{margin-top:12px}.account-form{display:grid;gap:16px;max-width:440px}.account-form label{display:grid;gap:7px;font-size:11px;color:#a8b3bf}.account-form input{width:100%;background:#090e14;border:1px solid #26313e;border-radius:9px;color:var(--text);padding:11px 12px;outline:none}.account-form input:focus{border-color:#3f806c;box-shadow:0 0 0 3px #173329}.account-form button{justify-self:start}
 .user-edit-form{margin-top:16px}.user-edit-form h3{grid-column:1/-1;font-size:13px;margin:0}

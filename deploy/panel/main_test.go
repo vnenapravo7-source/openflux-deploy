@@ -37,6 +37,19 @@ func TestValidateConfig(t *testing.T) {
 	}
 }
 
+func TestTailFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "panel-update.log")
+	if got := tailFile(path, 4); got != "" {
+		t.Fatalf("missing log: %q", got)
+	}
+	if err := os.WriteFile(path, []byte("123456789"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := tailFile(path, 4); got != "6789" {
+		t.Fatalf("log tail: %q", got)
+	}
+}
+
 func TestUsernameChangeRequiresPasswordAndIsUnique(t *testing.T) {
 	hash, err := bcrypt.GenerateFromPassword([]byte("current-password"), bcrypt.MinCost)
 	if err != nil {
