@@ -1156,7 +1156,7 @@ func (m *Manager) update() error {
 		cmd := exec.Command(scriptPath, "--force")
 		cmd.Env = append(os.Environ(), "OPENFLUX_PATCH_DIR="+filepath.Dir(scriptPath))
 		cmd.Stdout, cmd.Stderr = logFile, logFile
-		err := cmd.Run()
+		err = cmd.Run()
 		logFile.Close()
 		m.mu.Lock()
 		if err != nil {
