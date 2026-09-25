@@ -373,7 +373,18 @@ func connectionArgs(c Connection) []string {
 			args = append(args, "--url="+c.URL)
 		}
 	} else {
-		args = append(args, "--config="+sessionConfigPath(c.ID), "--negotiate")
+		if needsNamedConfig(c) {
+			args = append(args, "--config="+sessionConfigPath(c.ID))
+		} else {
+			list := make([]string, 0, len(c.Transports))
+			for _, link := range c.Transports {
+				list = append(list, fmt.Sprintf("%s:%d", link.Type, link.Priority))
+				if link.URL != "" { args = append(args, "--"+link.Type+"-url="+link.URL) }
+			}
+			args = append(args, "--transports="+strings.Join(list, ","))
+			if c.DirectListen != "" { args = append(args, "--direct-listen="+c.DirectListen) }
+		}
+		args = append(args, "--negotiate")
 		if contextURL := sessionContextURL(c); contextURL != "" { args = append(args, "--url="+contextURL) }
 		if c.MaxPacketSize != 0 {
 			args = append(args, fmt.Sprintf("--max-packet-size=%d", c.MaxPacketSize))
@@ -390,6 +401,15 @@ func connectionArgs(c Connection) []string {
 		args = append(args, "--debug")
 	}
 	return args
+}
+
+func needsNamedConfig(c Connection) bool {
+	seen := make(map[string]bool, len(c.Transports))
+	for _, link := range c.Transports {
+		if seen[link.Type] { return true }
+		seen[link.Type] = true
+	}
+	return false
 }
 
 // OpenFlux derives the AES transport context from --url even in multi-carrier
@@ -490,10 +510,12 @@ func (m *Manager) startLocked(id string) error {
 	}
 	if len(c.Transports) > 0 {
 		help, err := exec.Command(m.binaryPath, "--help").CombinedOutput()
-		if err != nil || !strings.Contains(string(help), "--config=") {
+		requiredFlag := "--transports="
+		if needsNamedConfig(c) { requiredFlag = "--config=" }
+		if err != nil || !strings.Contains(string(help), requiredFlag) {
 			return fmt.Errorf("this server binary does not support authenticated multi-transport sessions; update the server first")
 		}
-		if err := writeSessionConfig(c); err != nil { return err }
+		if needsNamedConfig(c) { if err := writeSessionConfig(c); err != nil { return err } }
 	} else if c.Negotiate {
 		help, err := exec.Command(m.binaryPath, "--help").CombinedOutput()
 		if err != nil || !strings.Contains(string(help), "--negotiate") {

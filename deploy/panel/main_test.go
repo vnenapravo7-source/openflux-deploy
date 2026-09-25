@@ -86,13 +86,13 @@ func TestSingleNegotiatedConnectionArgs(t *testing.T) {
 func TestAuthenticatedConnectionArgs(t *testing.T) {
 	c := Connection{ID: "example", Config: Config{Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/etc/openflux-deploy/key", Transports: []TransportLink{{Type: "direct", Priority: 100}, {Type: "yandex", URL: "https://docs.yandex.ru/example", Priority: 50}}, DirectListen: ":39000", MaxPacketSize: 1500}}
 	args := strings.Join(connectionArgs(c), " ")
-	for _, expected := range []string{"--config=", "--negotiate", "--url=https://docs.yandex.ru/example", "--max-packet-size=1500", "--cookie-store="} {
+	for _, expected := range []string{"--transports=direct:100,yandex:50", "--direct-listen=:39000", "--yandex-url=https://docs.yandex.ru/example", "--negotiate", "--url=https://docs.yandex.ru/example", "--max-packet-size=1500", "--cookie-store="} {
 		if !strings.Contains(args, expected) {
 			t.Fatalf("missing %s in %s", expected, args)
 		}
 	}
-	if strings.Contains(args, "--yandex-url=") {
-		t.Fatalf("named transport URL must stay in the config file: %s", args)
+	if strings.Contains(args, "--config=") {
+		t.Fatalf("unique transports should use upstream CLI mode: %s", args)
 	}
 }
 
@@ -110,6 +110,7 @@ func TestNamedSessionConfigAndManagedKey(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("OPENFLUX_STATE_DIR", dir)
 	c := Connection{ID: "example", Config: Config{Enabled: true, Transport: "yandex", Mode: "l4", Codec: "batched", Transports: []TransportLink{{Type: "yandex", URL: "https://disk.yandex.ru/i/one", Priority: 50}, {Type: "yandex", URL: "https://disk.yandex.ru/i/two", Priority: 75}, {Type: "mailru", URL: "https://cloud.mail.ru/public/three", Priority: 25}}}}
+	if !needsNamedConfig(c) || !strings.Contains(strings.Join(connectionArgs(c), " "), "--config=") { t.Fatal("duplicate documents must use named config") }
 	created, err := prepareKey(&c, nil)
 	if err != nil || !created { t.Fatalf("prepare key: %v", err) }
 	if err := writeSessionConfig(c); err != nil { t.Fatal(err) }
