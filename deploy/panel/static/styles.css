@@ -28,3 +28,13 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .direct-setup-notice{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:12px;border:1px solid #775739;border-radius:9px;background:#271d13;color:#ffe0b7;font-size:11px}.direct-setup-notice strong{color:#ffd299}
 
 .node-install-guide{margin:-4px 0 18px;padding:17px;border:1px solid #315545;border-radius:12px;background:linear-gradient(135deg,#10231d,#0d1718);display:grid;gap:12px}.node-guide-title{display:flex;gap:12px;align-items:center}.node-guide-icon{width:34px;height:34px;display:grid;place-items:center;border:1px solid #315545;border-radius:10px;background:#142b24;color:var(--accent);font-size:18px}.node-guide-title b,.node-guide-title small{display:block}.node-guide-title b{font-size:13px}.node-guide-title small,.node-install-guide p{font-size:11px;line-height:1.55;color:#a8b9b6}.node-guide-title small{margin-top:3px}.node-install-guide p{margin:0}.node-install-command{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 11px;border:1px solid #26313e;border-radius:9px;background:#080d12}.node-install-command code{color:#d5f5e8;font:11px/1.6 ui-monospace,Consolas,monospace;overflow-wrap:anywhere}.node-install-command button{flex:none}.node-form label small{color:var(--muted);font-size:10px;line-height:1.5}@media(max-width:570px){.node-install-command{align-items:stretch;flex-direction:column}.node-install-command button{align-self:flex-start}}
+
+/* Keep node setup guidance compact so the connected-node list stays visible. */
+.node-install-guide{margin:0 0 14px;padding:14px;gap:10px}
+.node-guide-title{gap:10px}
+.node-guide-icon{width:30px;height:30px;flex:none;font-size:15px}
+.node-guide-title b{font-size:12px}
+.node-guide-title small,.node-install-guide p{font-size:10px;line-height:1.4}
+.node-install-command{padding:8px 10px}
+.node-install-command code{font-size:10px;line-height:1.45}
+@media(min-width:900px){.node-install-guide{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);align-items:center}.node-install-guide>p{grid-column:1/-1}}
