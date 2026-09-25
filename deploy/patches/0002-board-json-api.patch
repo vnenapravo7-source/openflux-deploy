@@ -7,11 +7,11 @@ diff --git a/transport/yandex/boards.go b/transport/yandex/boards.go
 -	form := url.Values{}
 -	form.Set("action", action)
 -	form.Set("content", contentB64)
-+	body, _ := json.Marshal(map[string]string{"action": action, "content": contentB64})
++	requestBody, _ := json.Marshal(map[string]string{"action": action, "content": contentB64})
  
  	req, _ := http.NewRequest("POST", "https://"+boardsBase+"/api",
 -		strings.NewReader(form.Encode()))
-+		bytes.NewReader(body))
++		bytes.NewReader(requestBody))
  	req.Header.Set("User-Agent", boardsUA)
 -	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
 +	req.Header.Set("Content-Type", "application/json")
@@ -23,11 +23,11 @@ diff --git a/transport/yandex/boards.go b/transport/yandex/boards.go
 -	form := url.Values{}
 -	form.Set("action", "get-whiteboard-info")
 -	form.Set("content", contentB64)
-+	body, _ := json.Marshal(map[string]string{"action": "get-whiteboard-info", "content": contentB64})
++	requestBody, _ := json.Marshal(map[string]string{"action": "get-whiteboard-info", "content": contentB64})
  
  	req, _ := http.NewRequest("POST", "https://"+boardsBase+"/api",
 -		strings.NewReader(form.Encode()))
-+		bytes.NewReader(body))
++		bytes.NewReader(requestBody))
  	req.Header.Set("User-Agent", boardsUA)
 -	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
 +	req.Header.Set("Content-Type", "application/json")
