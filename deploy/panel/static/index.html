@@ -146,11 +146,11 @@
       </section>
       <section id="view-nodes" class="view admin-only">
         <article class="card"><div class="card-head"><div><h2>Подключённые серверы</h2><p>Статус и управление удалёнными OpenFlux-нодами</p></div><button id="showAddNode" class="primary small">+ Добавить ноду</button></div>
-          <aside class="node-install-guide">
+          <div class="node-install-guide">
             <div class="node-guide-title"><span class="node-guide-icon">↗</span><div><b>Как добавить сервер</b><small>На втором VPS установите OpenFlux в режиме ноды. Установщик сам выберет Docker или systemd.</small></div></div>
             <div class="node-install-command"><code id="nodeInstallCommand">sudo bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/deploy.sh)" -- --role node</code><button id="copyNodeInstallCommand" type="button" class="secondary small">Копировать</button></div>
             <p>После установки скопируйте из консоли <b>URL</b>, <b>токен</b> и <b>SHA-256</b> сюда. Убедитесь, что порт панели ноды доступен с основного VPS. Токен никому не отправляйте.</p>
-          </aside>
+          </div>
           <form id="nodeForm" class="node-form hidden">
             <label><span>Название</span><input id="nodeName" required placeholder="Амстердам 1"><small>Любая подпись, чтобы различать серверы в списке.</small></label>
             <label><span>HTTPS-адрес</span><input id="nodeUrl" required type="url" placeholder="https://203.0.113.10:8088"><small>URL из вывода установщика. Используйте публичный адрес и порт ноды.</small></label>
