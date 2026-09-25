@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const panelVersion = "0.6.5"
+const panelVersion = "0.6.6"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -550,6 +550,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	mgr.scheduleBoardRepair()
 	instructions, err := loadInstructions(env("OPENFLUX_INSTRUCTIONS", "/etc/openflux-deploy/instructions.json"), env("OPENFLUX_INSTRUCTION_ASSETS", "/var/lib/openflux-deploy/instruction-assets"))
 	if err != nil {
 		log.Fatal(err)

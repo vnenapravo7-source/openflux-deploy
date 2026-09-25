@@ -6,6 +6,8 @@ CONFIG="${OPENFLUX_CONFIG:-/etc/openflux-deploy/config.json}"
 STATE_DIR="${OPENFLUX_STATE_DIR:-/var/lib/openflux-deploy}"
 BINARY="${OPENFLUX_BINARY:-$STATE_DIR/bin/openflux}"
 VERSION_FILE="$STATE_DIR/upstream-version"
+PATCH_FILE="$STATE_DIR/server-patch-revision"
+PATCH_DIR=/usr/local/lib/openflux-deploy
 FORCE=0
 [ "${1:-}" = "--force" ] && FORCE=1
 
@@ -45,6 +47,12 @@ if [ "${1:-}" = "--rollback" ]; then
   mv "$BINARY.swap" "$BINARY.rollback"
   mv "$VERSION_FILE.new" "$VERSION_FILE"
   mv "$VERSION_FILE.swap" "$VERSION_FILE.rollback"
+  if [ -f "$PATCH_FILE.rollback" ]; then
+    cp -p "$PATCH_FILE" "$PATCH_FILE.swap" 2>/dev/null || true
+    cp -p "$PATCH_FILE.rollback" "$PATCH_FILE.new"
+    mv "$PATCH_FILE.new" "$PATCH_FILE"
+    if [ -f "$PATCH_FILE.swap" ]; then mv "$PATCH_FILE.swap" "$PATCH_FILE.rollback"; fi
+  fi
   say "restored $(cat "$VERSION_FILE")"
   restart_exit
   if ! check_health; then
@@ -57,6 +65,12 @@ if [ "${1:-}" = "--rollback" ]; then
     mv "$BINARY.swap" "$BINARY.rollback"
     mv "$VERSION_FILE.new" "$VERSION_FILE"
     mv "$VERSION_FILE.swap" "$VERSION_FILE.rollback"
+    if [ -f "$PATCH_FILE.rollback" ]; then
+      cp -p "$PATCH_FILE" "$PATCH_FILE.swap" 2>/dev/null || true
+      cp -p "$PATCH_FILE.rollback" "$PATCH_FILE.new"
+      mv "$PATCH_FILE.new" "$PATCH_FILE"
+      if [ -f "$PATCH_FILE.swap" ]; then mv "$PATCH_FILE.swap" "$PATCH_FILE.rollback"; fi
+    fi
     restart_exit
     exit 1
   fi
@@ -71,7 +85,9 @@ install -d -m 755 "$STATE_DIR/bin"
 LATEST="$(git ls-remote "$UPSTREAM_REPO" refs/heads/main | awk '{print $1}')"
 [ -n "$LATEST" ] || { say "cannot resolve upstream main"; exit 1; }
 CURRENT="$(cat "$VERSION_FILE" 2>/dev/null || true)"
-if [ "$LATEST" = "$CURRENT" ]; then say "already current ($LATEST)"; exit 0; fi
+PATCH_REVISION="$(sha256sum "$PATCH_DIR/patch-upstream.sh" "$PATCH_DIR"/patches/*.patch | sha256sum | awk '{print $1}')"
+CURRENT_PATCH="$(cat "$PATCH_FILE" 2>/dev/null || true)"
+if [ "$LATEST" = "$CURRENT" ] && [ "$PATCH_REVISION" = "$CURRENT_PATCH" ]; then say "already current ($LATEST)"; exit 0; fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -85,6 +101,7 @@ sh /usr/local/lib/openflux-deploy/patch-upstream.sh "$TMP/src"
 
 if [ -f "$BINARY" ]; then cp -p "$BINARY" "$BINARY.rollback"; fi
 if [ -f "$VERSION_FILE" ]; then cp -p "$VERSION_FILE" "$VERSION_FILE.rollback"; fi
+printf '%s\n' "${CURRENT_PATCH:-legacy}" >"$PATCH_FILE.rollback"
 install -m 755 "$TMP/openflux" "$BINARY.new"
 mv "$BINARY.new" "$BINARY"
 printf '%s\n' "$LATEST" >"$VERSION_FILE.new"
@@ -106,5 +123,8 @@ if ! check_health; then
     restart_exit
     exit 1
   fi
+  say 'new binary failed health check and no previous binary is available'
+  exit 1
 fi
+printf '%s\n' "$PATCH_REVISION" >"$PATCH_FILE"
 say "health check passed"

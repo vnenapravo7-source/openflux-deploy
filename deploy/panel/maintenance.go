@@ -26,7 +26,8 @@ func (m *Manager) rollbackServer() error {
 	if !regularFile(m.binaryPath+".rollback") || !regularFile(m.versionPath+".rollback") {
 		return fmt.Errorf("previous server version is unavailable")
 	}
-	if revisionFromFile(m.versionPath+".rollback") == m.version() {
+	patchFile := filepath.Join(filepath.Dir(m.versionPath), "server-patch-revision")
+	if revisionFromFile(m.versionPath+".rollback") == m.version() && revisionFromFile(patchFile+".rollback") == revisionFromFile(patchFile) {
 		return fmt.Errorf("server backup is the same revision as the current version")
 	}
 	m.mu.Lock()
@@ -137,4 +138,3 @@ func (m *Manager) checkVersions(force bool) {
 		m.mu.Unlock()
 	}()
 }
-

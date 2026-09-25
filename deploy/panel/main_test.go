@@ -25,7 +25,7 @@ func TestValidateConfig(t *testing.T) {
 		{"yandex url", Config{Enabled: true, Transport: "yandex", URL: "https://docs.yandex.ru/docs/view", Mode: "l3", Codec: "batched"}, true},
 		{"single negotiated yandex", Config{Enabled: true, Transport: "yandex", URL: "https://docs.yandex.ru/docs/view", Mode: "l4", Codec: "batched", Negotiate: true}, true},
 		{"single negotiated legacy codec", Config{Enabled: true, Transport: "yandex", URL: "https://docs.yandex.ru/docs/view", Mode: "l4", Codec: "legacy", Negotiate: true}, false},
-		{"board url", Config{Enabled: true, Transport: "boards", URL: "https://boards.yandex.ru/guest/?hash=example", Mode: "l4", Codec: "batched"}, true},
+		{"board url", Config{Enabled: true, Transport: "boards", URL: "https://boards.yandex.ru/whiteboard/?hash=example", Mode: "l4", Codec: "batched"}, true},
 		{"board missing hash", Config{Enabled: true, Transport: "boards", URL: "https://boards.yandex.ru/guest/", Mode: "l4", Codec: "batched"}, false},
 		{"board wrong host", Config{Enabled: true, Transport: "boards", URL: "https://example.com/guest/?hash=example", Mode: "l4", Codec: "batched"}, false},
 		{"board insecure url", Config{Enabled: true, Transport: "boards", URL: "http://boards.yandex.ru/guest/?hash=example", Mode: "l4", Codec: "batched"}, false},

@@ -965,10 +965,12 @@ func (m *Manager) state(user User) map[string]any {
 		previousServer, previousPanel := revisionFromFile(m.versionPath+".rollback"), revisionFromFile(m.panelRevisionPath+".rollback")
 		state["previous_server_revision"] = previousServer
 		state["previous_panel_revision"] = previousPanel
-		state["server_rollback_available"] = m.rollbackCapable && regularFile(m.binaryPath+".rollback") && regularFile(m.versionPath+".rollback") && previousServer != m.version()
+		patchFile := filepath.Join(filepath.Dir(m.versionPath), "server-patch-revision")
+		state["server_rollback_available"] = m.rollbackCapable && regularFile(m.binaryPath+".rollback") && regularFile(m.versionPath+".rollback") && (previousServer != m.version() || revisionFromFile(patchFile+".rollback") != revisionFromFile(patchFile))
 		state["panel_rollback_available"] = m.rollbackCapable && regularFile(filepath.Join(filepath.Dir(m.panelRevisionPath), "bin/openflux-panel.rollback")) && regularFile(m.panelRevisionPath+".rollback") && previousPanel != m.panelRevision()
 		state["panel_update_log"] = tailFile(m.panelUpdateLogPath, 8192)
 		state["server_update_log"] = tailFile(m.serverUpdateLogPath, 8192)
+		state["server_patch_pending"] = m.boardRepairPending()
 		state["nodes"] = m.nodeViews()
 	}
 	return state
@@ -1010,6 +1012,16 @@ func (m *Manager) update() error {
 		return err
 	}
 	go func() {
+		if err := refreshServerTooling(m.updatePath); err != nil {
+			fmt.Fprintln(logFile, "[panel] server fixes could not be installed:", err)
+			logFile.Close()
+			m.mu.Lock()
+			m.updateError = err.Error()
+			m.updating = false
+			m.mu.Unlock()
+			return
+		}
+		fmt.Fprintln(logFile, "[panel] server update tools refreshed")
 		cmd := exec.Command(m.updatePath, "--force")
 		cmd.Stdout, cmd.Stderr = logFile, logFile
 		err := cmd.Run()

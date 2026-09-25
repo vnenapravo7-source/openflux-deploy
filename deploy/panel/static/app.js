@@ -83,12 +83,12 @@ function maybeOfferUpdates(serverNew,panelNew){
   if(!pendingUpdatePrompt||state.checking_versions||!state.last_version_check)return;
   pendingUpdatePrompt=false;
   if(!serverNew&&!panelNew)return;
-  const signature=`${serverNew?state.latest_upstream:""}|${panelNew?state.latest_panel:""}`;
+  const signature=`${serverNew?`${state.latest_upstream||""}${state.server_patch_pending?":board-json-fix":""}`:""}|${panelNew?state.latest_panel:""}`;
   const key=`openflux-update-reminder:${state.me.id}`;
   try{if(localStorage.getItem(key)===signature)return}catch(_){}
   if(shownUpdateSignature===signature)return;
   shownUpdateSignature=currentUpdateSignature=signature;
-  $("#updateModalText").textContent=serverNew&&panelNew?"Есть новые версии серверной части и панели. Что обновить сейчас?":serverNew?"Доступна новая версия серверной части.":"Доступна новая версия панели.";
+  $("#updateModalText").textContent=serverNew&&panelNew?"Есть обновления серверной части и панели. Что обновить сейчас?":state.server_patch_pending?"Доступно исправление Yandex Board для серверной части.":serverNew?"Доступна новая версия серверной части.":"Доступна новая версия панели.";
   $("#modalServerUpdate").classList.toggle("hidden",!serverNew);
   $("#modalPanelUpdate").classList.toggle("hidden",!panelNew);
   $("#suppressUpdateReminder").checked=false;
@@ -130,21 +130,23 @@ function render(){
     $("#versionCheckStatus").textContent=state.checking_versions?"Проверяю версии сервера и панели…":state.version_check_error?`Ошибка проверки: ${state.version_check_error}`:state.last_version_check?`Проверено: ${new Date(state.last_version_check).toLocaleString("ru-RU")}. ${state.latest_upstream&&state.latest_panel?"Результаты ниже.":"Не удалось получить все версии."}`:"Версии ещё не проверены";
     const serverNew=!!state.latest_upstream&&state.latest_upstream!==state.upstream_version;
     const panelNew=!!state.latest_panel&&state.latest_panel!==state.panel_revision;
-    $("#updateBtn").disabled=busy||!!state.checking_versions||!serverNew;
+    const serverFix=!!state.server_patch_pending,serverUpdate=serverNew||serverFix;
+    $("#updateBtn").disabled=busy||!!state.checking_versions||!serverUpdate;
+    $("#updateBtn").textContent=serverFix&&!serverNew?"Исправить Board":"Обновить сервер";
     $("#updatePanelBtn").disabled=busy||!!state.checking_versions||!panelNew;
-    $("#serverVersionStatus").textContent=state.latest_upstream?`Последняя ревизия: ${state.latest_upstream.slice(0,8)}${serverNew?" · доступно обновление":" · актуально"}`:"";
+    $("#serverVersionStatus").textContent=serverFix?"Доступно исправление Board (HTTP 415)":state.latest_upstream?`Последняя ревизия: ${state.latest_upstream.slice(0,8)}${serverNew?" · доступно обновление":" · актуально"}`:"";
     $("#panelVersionStatus").textContent=state.latest_panel?`Последняя ревизия: ${state.latest_panel.slice(0,8)}${panelNew?" · доступно обновление":" · актуально"}`:"";
     $("#serverRollbackTarget").textContent=state.previous_server_revision&&state.previous_server_revision!=="unknown"?`Резервная версия: ${state.previous_server_revision.slice(0,8)}${state.previous_server_revision===state.upstream_version?" · совпадает с текущей":""}`:"Резервной версии пока нет";
     $("#panelRollbackTarget").textContent=state.previous_panel_revision&&state.previous_panel_revision!=="unknown"?`Резервная версия: ${state.previous_panel_revision.slice(0,8)}${state.previous_panel_revision===state.panel_revision?" · совпадает с текущей":""}`:"Резервной версии пока нет";
-    $("#updateNotice").classList.toggle("hidden",!serverNew&&!panelNew);
-    $("#updateNoticeText").textContent=serverNew&&panelNew?"Для сервера и панели доступны новые версии.":serverNew?"Доступна новая версия сервера.":"Доступна новая версия панели.";
-    $("#offerServerUpdate").classList.toggle("hidden",!serverNew);$("#offerPanelUpdate").classList.toggle("hidden",!panelNew);
+    $("#updateNotice").classList.toggle("hidden",!serverUpdate&&!panelNew);
+    $("#updateNoticeText").textContent=serverUpdate&&panelNew?"Для сервера и панели доступны обновления.":serverFix&&!serverNew?"Доступно исправление Yandex Board.":serverNew?"Доступна новая версия сервера.":"Доступна новая версия панели.";
+    $("#offerServerUpdate").classList.toggle("hidden",!serverUpdate);$("#offerPanelUpdate").classList.toggle("hidden",!panelNew);
     $("#offerServerUpdate").disabled=busy||!!state.checking_versions;$("#offerPanelUpdate").disabled=busy||!!state.checking_versions;
     $("#serverUpdateStatus").textContent=state.update_error||(state.updating?(state.server_action==="rollback"?"Откатываем серверную часть…":"Обновляем серверную часть…"):(state.server_action==="rollback"?"Откат завершён; автообновление сервера выключено.":state.version_check_error||""));
     const serverUpdateLog=$("#serverUpdateLog");serverUpdateLog.textContent=state.server_update_log||"";serverUpdateLog.classList.toggle("hidden",!state.server_update_log);
     $("#panelUpdateStatus").textContent=state.panel_update_error||(state.updating_panel?(state.panel_action==="rollback"?"Откатываем панель; она будет перезапущена…":"Панель обновляется; ход работы показан ниже…"):"");
     const updateLog=$("#panelUpdateLog");updateLog.textContent=state.panel_update_log||"";updateLog.classList.toggle("hidden",!state.panel_update_log);
-    drawChart(state.traffic||[]);renderNodes(state.nodes||[]);maybeOfferUpdates(serverNew,panelNew)
+    drawChart(state.traffic||[]);renderNodes(state.nodes||[]);maybeOfferUpdates(serverUpdate,panelNew)
   }
   else $("#updateNotice").classList.add("hidden");
   renderConnections();if(activeView==="users")renderUsers();

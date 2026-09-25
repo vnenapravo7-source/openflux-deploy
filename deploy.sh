@@ -192,7 +192,8 @@ install_systemd(){
   install -m 755 "$PREFIX/source/deploy/update.sh" /usr/local/lib/openflux-deploy/update.sh
   install -m 755 "$PREFIX/source/deploy/patch-upstream.sh" /usr/local/lib/openflux-deploy/patch-upstream.sh
   install -d /usr/local/lib/openflux-deploy/patches
-  install -m 644 "$PREFIX/source/deploy/patches/0001-preserve-conf-transport-urls.patch" /usr/local/lib/openflux-deploy/patches/
+  install -m 644 "$PREFIX/source/deploy/patches/"*.patch /usr/local/lib/openflux-deploy/patches/
+  sha256sum /usr/local/lib/openflux-deploy/patch-upstream.sh /usr/local/lib/openflux-deploy/patches/*.patch | sha256sum | awk '{print $1}' >"$STATE_DIR/server-patch-revision"
   install -m 755 "$PREFIX/source/deploy/panel-update.sh" /usr/local/lib/openflux-deploy/panel-update.sh
   printf 'systemd\n' >"$CONFIG_DIR/install-mode"
   cat >/etc/systemd/system/openflux-panel.service <<EOF
@@ -257,7 +258,7 @@ install_docker(){
   cp "$PREFIX/source/deploy/panel-update.sh" "$PREFIX/panel-update.sh"
   cp "$PREFIX/source/deploy/patch-upstream.sh" "$PREFIX/patch-upstream.sh"
   install -d "$PREFIX/patches"
-  cp "$PREFIX/source/deploy/patches/0001-preserve-conf-transport-urls.patch" "$PREFIX/patches/"
+  cp "$PREFIX/source/deploy/patches/"*.patch "$PREFIX/patches/"
   if [ "$EXISTING_USERS" -eq 0 ]; then cat >"$PREFIX/.env" <<EOF
 OPENFLUX_PORT=$PORT
 OPENFLUX_ADMIN_USER=$(escape_env "$ADMIN_USER")

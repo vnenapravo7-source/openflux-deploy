@@ -1,0 +1,34 @@
+diff --git a/transport/yandex/boards.go b/transport/yandex/boards.go
+--- a/transport/yandex/boards.go
++++ b/transport/yandex/boards.go
+@@ -328,12 +328,10 @@ func (t *BoardsTransport) postAPI(client *http.Client, hash, action string, cont
+ 	raw, _ := json.Marshal(content)
+ 	contentB64 := base64.StdEncoding.EncodeToString(raw)
+-	form := url.Values{}
+-	form.Set("action", action)
+-	form.Set("content", contentB64)
++	body, _ := json.Marshal(map[string]string{"action": action, "content": contentB64})
+ 
+ 	req, _ := http.NewRequest("POST", "https://"+boardsBase+"/api",
+-		strings.NewReader(form.Encode()))
++		bytes.NewReader(body))
+ 	req.Header.Set("User-Agent", boardsUA)
+-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
++	req.Header.Set("Content-Type", "application/json")
+ 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+ 	req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01")
+@@ -359,11 +357,9 @@ func (t *BoardsTransport) getWhiteboardInfo(client *http.Client, hash string) (
+ 	raw, _ := json.Marshal(map[string]string{"hash": hash})
+ 	contentB64 := base64.StdEncoding.EncodeToString(raw)
+-	form := url.Values{}
+-	form.Set("action", "get-whiteboard-info")
+-	form.Set("content", contentB64)
++	body, _ := json.Marshal(map[string]string{"action": "get-whiteboard-info", "content": contentB64})
+ 
+ 	req, _ := http.NewRequest("POST", "https://"+boardsBase+"/api",
+-		strings.NewReader(form.Encode()))
++		bytes.NewReader(body))
+ 	req.Header.Set("User-Agent", boardsUA)
+-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
++	req.Header.Set("Content-Type", "application/json")
+ 	req.Header.Set("X-Requested-With", "XMLHttpRequest")

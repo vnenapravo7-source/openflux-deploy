@@ -8,6 +8,7 @@ if [ ! -x "$STATE_DIR/bin/openflux" ] || [ -f "$STATE_DIR/server-seed-next-start
   install -m 755 /usr/local/lib/openflux-deploy/openflux.seed "$STATE_DIR/bin/openflux.new"
   mv "$STATE_DIR/bin/openflux.new" "$STATE_DIR/bin/openflux"
   cp /usr/local/lib/openflux-deploy/upstream-version.seed "$STATE_DIR/upstream-version"
+  sha256sum /usr/local/lib/openflux-deploy/patch-upstream.sh /usr/local/lib/openflux-deploy/patches/*.patch | sha256sum | awk '{print $1}' >"$STATE_DIR/server-patch-revision"
 fi
 rm -f "$STATE_DIR/server-seed-next-start"
 if [ ! -x "$STATE_DIR/bin/openflux-panel" ] || [ -f "$STATE_DIR/panel-seed-next-start" ]; then
