@@ -24,20 +24,20 @@ import (
 )
 
 type Config struct {
-	Enabled           bool   `json:"enabled"`
-	Transport         string `json:"transport"`
-	URL               string `json:"url"`
-	Mode              string `json:"mode"`
-	Codec             string `json:"codec"`
-	LocalIP           string `json:"local_ip"`
-	EncryptionKeyFile string `json:"encryption_key_file"`
-	Negotiate        bool   `json:"negotiate,omitempty"`
-	SessionContextURL string `json:"session_context_url,omitempty"`
+	Enabled           bool            `json:"enabled"`
+	Transport         string          `json:"transport"`
+	URL               string          `json:"url"`
+	Mode              string          `json:"mode"`
+	Codec             string          `json:"codec"`
+	LocalIP           string          `json:"local_ip"`
+	EncryptionKeyFile string          `json:"encryption_key_file"`
+	Negotiate         bool            `json:"negotiate,omitempty"`
+	SessionContextURL string          `json:"session_context_url,omitempty"`
 	Transports        []TransportLink `json:"transports,omitempty"`
-	DirectListen      string `json:"direct_listen,omitempty"`
-	MaxPacketSize     int    `json:"max_packet_size,omitempty"`
-	Debug             bool   `json:"debug"`
-	AutoUpdate        bool   `json:"auto_update,omitempty"` // Only used to migrate the original single connection.
+	DirectListen      string          `json:"direct_listen,omitempty"`
+	MaxPacketSize     int             `json:"max_packet_size,omitempty"`
+	Debug             bool            `json:"debug"`
+	AutoUpdate        bool            `json:"auto_update,omitempty"` // Only used to migrate the original single connection.
 }
 
 // TransportLink describes one carrier in the authenticated OpenFlux session.
@@ -57,16 +57,16 @@ type Connection struct {
 
 type ConnectionView struct {
 	Connection
-	KeyManaged bool `json:"key_managed"`
-	SessionContext string `json:"session_context,omitempty"`
-	YandexAuthRequired bool `json:"yandex_auth_required,omitempty"`
-	Running    bool     `json:"running"`
-	PID        int      `json:"pid"`
-	Uptime     int64    `json:"uptime"`
-	Restarts   int      `json:"restarts"`
-	LastError  string   `json:"last_error"`
-	Logs       []string `json:"logs"`
-	ClientCode string   `json:"client_code,omitempty"`
+	KeyManaged         bool     `json:"key_managed"`
+	SessionContext     string   `json:"session_context,omitempty"`
+	YandexAuthRequired bool     `json:"yandex_auth_required,omitempty"`
+	Running            bool     `json:"running"`
+	PID                int      `json:"pid"`
+	Uptime             int64    `json:"uptime"`
+	Restarts           int      `json:"restarts"`
+	LastError          string   `json:"last_error"`
+	Logs               []string `json:"logs"`
+	ClientCode         string   `json:"client_code,omitempty"`
 }
 
 type TrafficPoint struct {
@@ -97,45 +97,45 @@ type NodeView struct {
 }
 
 type processState struct {
-	cmd            *exec.Cmd
-	startedAt      time.Time
-	restarts       int
-	lastError      string
-	logs           []string
-	clientCode     string
-	expectCupsCode bool
+	cmd                *exec.Cmd
+	startedAt          time.Time
+	restarts           int
+	lastError          string
+	logs               []string
+	clientCode         string
+	expectCupsCode     bool
 	yandexAuthRequired bool
 }
 
 type Manager struct {
-	mu                 sync.Mutex
-	legacyPath         string
-	connectionsPath    string
-	nodesPath          string
-	binaryPath         string
-	versionPath        string
-	updatePath         string
-	panelUpdatePath    string
-	panelRevisionPath  string
+	mu                  sync.Mutex
+	legacyPath          string
+	connectionsPath     string
+	nodesPath           string
+	binaryPath          string
+	versionPath         string
+	updatePath          string
+	panelUpdatePath     string
+	panelRevisionPath   string
 	panelUpdateLogPath  string
 	serverUpdateLogPath string
-	rollbackCapable    bool
-	connections        []Connection
-	processes          map[string]*processState
-	nodes              []Node
-	traffic            []TrafficPoint
-	autoUpdate         bool
-	updating           bool
-	updateError        string
-	serverAction       string
-	updatingPanel      bool
-	panelUpdateError   string
-	panelAction        string
-	checkingVersions   bool
-	latestUpstream     string
-	latestPanel        string
-	versionCheckError  string
-	lastVersionCheck   time.Time
+	rollbackCapable     bool
+	connections         []Connection
+	processes           map[string]*processState
+	nodes               []Node
+	traffic             []TrafficPoint
+	autoUpdate          bool
+	updating            bool
+	updateError         string
+	serverAction        string
+	updatingPanel       bool
+	panelUpdateError    string
+	panelAction         string
+	checkingVersions    bool
+	latestUpstream      string
+	latestPanel         string
+	versionCheckError   string
+	lastVersionCheck    time.Time
 }
 
 func defaults() Config { return Config{Transport: "yandex", Mode: "l4", Codec: "batched"} }
@@ -156,13 +156,21 @@ func validateConfig(c Config) error {
 		return fmt.Errorf("local IP is invalid")
 	}
 	if len(c.Transports) == 0 {
-		if c.SessionContextURL != "" { return fmt.Errorf("session context URL requires a protected session") }
-		if c.Negotiate && c.Codec != "batched" { return fmt.Errorf("negotiation requires batched codec") }
+		if c.SessionContextURL != "" {
+			return fmt.Errorf("session context URL requires a protected session")
+		}
+		if c.Negotiate && c.Codec != "batched" {
+			return fmt.Errorf("negotiation requires batched codec")
+		}
 		if c.DirectListen != "" || c.MaxPacketSize != 0 {
-			if c.Transport != "direct" || c.MaxPacketSize != 0 { return fmt.Errorf("session settings require at least one transport") }
+			if c.Transport != "direct" || c.MaxPacketSize != 0 {
+				return fmt.Errorf("session settings require at least one transport")
+			}
 		}
 		if c.Transport == "direct" {
-			if c.DirectListen != "" { return validateDirectListen(c.DirectListen) }
+			if c.DirectListen != "" {
+				return validateDirectListen(c.DirectListen)
+			}
 			return nil
 		}
 		return validateTransportURL(c.Transport, c.URL, c.Enabled)
@@ -171,7 +179,9 @@ func validateConfig(c Config) error {
 		return fmt.Errorf("authenticated session requires batched codec")
 	}
 	if c.SessionContextURL != "" {
-		if err := validateTransportURL("yandex", c.SessionContextURL, true); err != nil { return fmt.Errorf("session context: %w", err) }
+		if err := validateTransportURL("yandex", c.SessionContextURL, true); err != nil {
+			return fmt.Errorf("session context: %w", err)
+		}
 	}
 	if c.MaxPacketSize != 0 && (c.MaxPacketSize < 1280 || c.MaxPacketSize > 65000) {
 		return fmt.Errorf("maximum packet size must be 1280–65000")
@@ -204,7 +214,9 @@ func validateConfig(c Config) error {
 		if err := validateTransportURL(link.Type, link.URL, c.Enabled); err != nil {
 			return err
 		}
-		if strings.ContainsAny(link.URL, "#;\n\r") { return fmt.Errorf("transport URL contains characters unsupported by OpenFlux config") }
+		if strings.ContainsAny(link.URL, "#;\n\r") {
+			return fmt.Errorf("transport URL contains characters unsupported by OpenFlux config")
+		}
 	}
 	if direct {
 		if c.DirectListen != "" {
@@ -248,7 +260,9 @@ func validateDirectListen(value string) error {
 }
 
 func usesDirect(c Config) bool {
-	if c.Transport == "direct" && len(c.Transports) == 0 { return true }
+	if c.Transport == "direct" && len(c.Transports) == 0 {
+		return true
+	}
 	for _, link := range c.Transports {
 		if link.Type == "direct" {
 			return true
@@ -304,7 +318,9 @@ func NewManager(legacyPath, connectionsPath, nodesPath, binaryPath, versionPath,
 	for i := range m.connections {
 		c := &m.connections[i]
 		if c.EncryptionKeyFile != "" && !filepath.IsAbs(c.EncryptionKeyFile) {
-			if _, err := prepareKey(c, nil); err != nil { return nil, fmt.Errorf("migrate key for %s: %w", c.ID, err) }
+			if _, err := prepareKey(c, nil); err != nil {
+				return nil, fmt.Errorf("migrate key for %s: %w", c.ID, err)
+			}
 			migratedKeys = true
 		}
 		if err := validateConnection(*c); err != nil {
@@ -312,7 +328,11 @@ func NewManager(legacyPath, connectionsPath, nodesPath, binaryPath, versionPath,
 		}
 		m.processes[c.ID] = &processState{}
 	}
-	if migratedKeys { if err := writeJSONFile(connectionsPath, m.connections); err != nil { return nil, err } }
+	if migratedKeys {
+		if err := writeJSONFile(connectionsPath, m.connections); err != nil {
+			return nil, err
+		}
+	}
 	if raw, err := os.ReadFile(nodesPath); err == nil {
 		if err := json.Unmarshal(raw, &m.nodes); err != nil {
 			return nil, fmt.Errorf("nodes file: %w", err)
@@ -369,8 +389,12 @@ func connectionArgs(c Connection) []string {
 	args := []string{"--role=exit", "--mode=" + c.Mode, "--codec=" + c.Codec}
 	if len(c.Transports) == 0 {
 		args = append(args, "--transport="+c.Transport)
-		if c.Negotiate { args = append(args, "--negotiate") }
-		if c.Transport == "direct" { args = append(args, "--direct-listen="+c.DirectListen) }
+		if c.Negotiate {
+			args = append(args, "--negotiate")
+		}
+		if c.Transport == "direct" {
+			args = append(args, "--direct-listen="+c.DirectListen)
+		}
 		if c.URL != "" {
 			args = append(args, "--url="+c.URL)
 		}
@@ -384,13 +408,19 @@ func connectionArgs(c Connection) []string {
 			list := make([]string, 0, len(c.Transports))
 			for _, link := range c.Transports {
 				list = append(list, fmt.Sprintf("%s:%d", link.Type, link.Priority))
-				if link.URL != "" { args = append(args, "--"+link.Type+"-url="+link.URL) }
+				if link.URL != "" {
+					args = append(args, "--"+link.Type+"-url="+link.URL)
+				}
 			}
 			args = append(args, "--transports="+strings.Join(list, ","))
-			if c.DirectListen != "" { args = append(args, "--direct-listen="+c.DirectListen) }
+			if c.DirectListen != "" {
+				args = append(args, "--direct-listen="+c.DirectListen)
+			}
 		}
 		args = append(args, "--negotiate")
-		if contextURL := sessionContextURL(c); contextURL != "" { args = append(args, "--url="+contextURL) }
+		if contextURL := sessionContextURL(c); contextURL != "" {
+			args = append(args, "--url="+contextURL)
+		}
 		if c.MaxPacketSize != 0 {
 			args = append(args, fmt.Sprintf("--max-packet-size=%d", c.MaxPacketSize))
 		}
@@ -411,7 +441,9 @@ func connectionArgs(c Connection) []string {
 func needsNamedConfig(c Connection) bool {
 	seen := make(map[string]bool, len(c.Transports))
 	for _, link := range c.Transports {
-		if seen[link.Type] { return true }
+		if seen[link.Type] {
+			return true
+		}
 		seen[link.Type] = true
 	}
 	return false
@@ -420,12 +452,18 @@ func needsNamedConfig(c Connection) bool {
 // OpenFlux derives the AES transport context from --url even in multi-carrier
 // mode. The first Yandex document is the mobile client's default context.
 func sessionContextURL(c Connection) string {
-	if c.SessionContextURL != "" { return c.SessionContextURL }
-	for _, link := range c.Transports {
-		if link.Type == "yandex" && link.URL != "" { return link.URL }
+	if c.SessionContextURL != "" {
+		return c.SessionContextURL
 	}
 	for _, link := range c.Transports {
-		if link.URL != "" { return link.URL }
+		if link.Type == "yandex" && link.URL != "" {
+			return link.URL
+		}
+	}
+	for _, link := range c.Transports {
+		if link.URL != "" {
+			return link.URL
+		}
 	}
 	return ""
 }
@@ -441,18 +479,34 @@ func cookieStorePath(id string) string {
 // Move an existing single-transport jar from the container working directory
 // into the persistent state volume without altering any other document's jar.
 func migrateLegacyCookieStore(c Connection) error {
-	if c.ID == "" || c.URL == "" || c.Transport == "direct" || len(c.Transports) != 0 { return nil }
+	if c.ID == "" || c.URL == "" || c.Transport == "direct" || len(c.Transports) != 0 {
+		return nil
+	}
 	path := cookieStorePath(c.ID)
-	if _, err := os.Stat(path); err == nil { return nil } else if !os.IsNotExist(err) { return err }
-	raw, err := os.ReadFile("cookies-"+c.Transport+".json")
-	if os.IsNotExist(err) { return nil }
-	if err != nil { return err }
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	raw, err := os.ReadFile("cookies-" + c.Transport + ".json")
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
 	var jars map[string]map[string]string
-	if err := json.Unmarshal(raw, &jars); err != nil { return err }
+	if err := json.Unmarshal(raw, &jars); err != nil {
+		return err
+	}
 	jar := jars[c.URL]
-	if len(jar) == 0 { return nil }
+	if len(jar) == 0 {
+		return nil
+	}
 	data, err := json.Marshal(map[string]map[string]string{c.URL: jar})
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return writePrivateFile(path, data)
 }
 
@@ -461,33 +515,70 @@ func sessionConfigPath(id string) string {
 }
 
 func writePrivateFile(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil { return err }
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".openflux-*")
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(0600); err != nil { tmp.Close(); return err }
-	if _, err := tmp.Write(data); err != nil { tmp.Close(); return err }
-	if err := tmp.Close(); err != nil { return err }
+	if err := tmp.Chmod(0600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
 	return os.Rename(tmp.Name(), path)
 }
 
 func prepareKey(c *Connection, previous *Connection) (bool, error) {
 	if c.EncryptionKeyFile != "" && !filepath.IsAbs(c.EncryptionKeyFile) {
-		if len(c.EncryptionKeyFile) > 4096 || strings.ContainsAny(c.EncryptionKeyFile, "\r\n") { return false, fmt.Errorf("invalid encryption key") }
+		if len(c.EncryptionKeyFile) > 4096 || strings.ContainsAny(c.EncryptionKeyFile, "\r\n") {
+			return false, fmt.Errorf("invalid encryption key")
+		}
 		path := managedKeyPath(c.ID)
-		if err := writePrivateFile(path, []byte(c.EncryptionKeyFile+"\n")); err != nil { return false, err }
+		if err := writePrivateFile(path, []byte(c.EncryptionKeyFile+"\n")); err != nil {
+			return false, err
+		}
 		c.EncryptionKeyFile = path
 		return true, nil
 	}
-	if !c.Enabled || (c.Transport != "direct" && !c.Negotiate && len(c.Transports) == 0) || c.EncryptionKeyFile != "" { return false, nil }
+	if c.EncryptionKeyFile != "" {
+		if c.EncryptionKeyFile != managedKeyPath(c.ID) {
+			return false, nil
+		}
+		if _, err := os.Stat(c.EncryptionKeyFile); err == nil {
+			return false, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+	}
 	if previous != nil && previous.EncryptionKeyFile != "" {
-		c.EncryptionKeyFile = previous.EncryptionKeyFile
-		return false, nil
+		if previous.EncryptionKeyFile != managedKeyPath(c.ID) {
+			c.EncryptionKeyFile = previous.EncryptionKeyFile
+			return false, nil
+		}
+		if _, err := os.Stat(previous.EncryptionKeyFile); err == nil {
+			c.EncryptionKeyFile = previous.EncryptionKeyFile
+			return false, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
 	}
 	var secret [32]byte
-	if _, err := rand.Read(secret[:]); err != nil { return false, err }
+	if _, err := rand.Read(secret[:]); err != nil {
+		return false, err
+	}
 	path := managedKeyPath(c.ID)
-	if err := writePrivateFile(path, []byte(hex.EncodeToString(secret[:])+"\n")); err != nil { return false, err }
+	if err := writePrivateFile(path, []byte(hex.EncodeToString(secret[:])+"\n")); err != nil {
+		return false, err
+	}
 	c.EncryptionKeyFile = path
 	return true, nil
 }
@@ -496,10 +587,16 @@ func (m *Manager) connectionKey(id string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	i, ok := m.findLocked(id)
-	if !ok { return "", os.ErrNotExist }
-	if m.connections[i].EncryptionKeyFile != managedKeyPath(id) { return "", fmt.Errorf("key is not managed by the panel") }
+	if !ok {
+		return "", os.ErrNotExist
+	}
+	if m.connections[i].EncryptionKeyFile != managedKeyPath(id) {
+		return "", fmt.Errorf("key is not managed by the panel")
+	}
 	raw, err := os.ReadFile(managedKeyPath(id))
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 	return strings.TrimSpace(string(raw)), nil
 }
 
@@ -509,9 +606,15 @@ func writeSessionConfig(c Connection) error {
 	for _, link := range c.Transports {
 		counts[link.Type]++
 		name := link.Type
-		if counts[link.Type] > 1 { name = fmt.Sprintf("%s-%d", link.Type, counts[link.Type]) }
+		if counts[link.Type] > 1 {
+			name = fmt.Sprintf("%s-%d", link.Type, counts[link.Type])
+		}
 		fmt.Fprintf(&b, "[Transport \"%s\"]\nType = %s\nPriority = %d\n", name, link.Type, link.Priority)
-		if link.Type == "direct" { fmt.Fprintf(&b, "Listen = %s\n", c.DirectListen) } else { fmt.Fprintf(&b, "URL = %s\n", link.URL) }
+		if link.Type == "direct" {
+			fmt.Fprintf(&b, "Listen = %s\n", c.DirectListen)
+		} else {
+			fmt.Fprintf(&b, "URL = %s\n", link.URL)
+		}
 		b.WriteByte('\n')
 	}
 	return writePrivateFile(sessionConfigPath(c.ID), []byte(b.String()))
@@ -538,11 +641,17 @@ func (m *Manager) startLocked(id string) error {
 	if len(c.Transports) > 0 {
 		help, err := exec.Command(m.binaryPath, "--help").CombinedOutput()
 		requiredFlag := "--transports="
-		if needsNamedConfig(c) { requiredFlag = "--config=" }
+		if needsNamedConfig(c) {
+			requiredFlag = "--config="
+		}
 		if err != nil || !strings.Contains(string(help), requiredFlag) {
 			return fmt.Errorf("this server binary does not support authenticated multi-transport sessions; update the server first")
 		}
-		if needsNamedConfig(c) { if err := writeSessionConfig(c); err != nil { return err } }
+		if needsNamedConfig(c) {
+			if err := writeSessionConfig(c); err != nil {
+				return err
+			}
+		}
 	} else if c.Negotiate {
 		help, err := exec.Command(m.binaryPath, "--help").CombinedOutput()
 		if err != nil || !strings.Contains(string(help), "--negotiate") {
@@ -715,10 +824,14 @@ func (m *Manager) addConnection(c Connection) (Connection, error) {
 		return Connection{}, err
 	}
 	generated, err := prepareKey(&c, nil)
-	if err != nil { return Connection{}, err }
+	if err != nil {
+		return Connection{}, err
+	}
 	next := append(append([]Connection(nil), m.connections...), c)
 	if err := writeJSONFile(m.connectionsPath, next); err != nil {
-		if generated { _ = os.Remove(managedKeyPath(c.ID)) }
+		if generated {
+			_ = os.Remove(managedKeyPath(c.ID))
+		}
 		return Connection{}, err
 	}
 	m.connections = next
@@ -745,11 +858,15 @@ func (m *Manager) updateConnection(id string, c Connection) error {
 		return err
 	}
 	generated, err := prepareKey(&c, &previous)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	next := append([]Connection(nil), m.connections...)
 	next[i] = c
 	if err := writeJSONFile(m.connectionsPath, next); err != nil {
-		if generated { _ = os.Remove(managedKeyPath(id)) }
+		if generated {
+			_ = os.Remove(managedKeyPath(id))
+		}
 		return err
 	}
 	m.connections = next
@@ -842,7 +959,9 @@ func (m *Manager) connectionViews(user User) []ConnectionView {
 			continue
 		}
 		v := ConnectionView{Connection: c, Logs: []string{}, KeyManaged: c.EncryptionKeyFile != "" && c.EncryptionKeyFile == managedKeyPath(c.ID)}
-		if len(c.Transports) > 0 { v.SessionContext = sessionContextURL(c) }
+		if len(c.Transports) > 0 {
+			v.SessionContext = sessionContextURL(c)
+		}
 		if p := m.processes[c.ID]; p != nil {
 			v.Restarts, v.LastError, v.Logs, v.ClientCode, v.YandexAuthRequired = p.restarts, p.lastError, append([]string{}, p.logs...), p.clientCode, p.yandexAuthRequired
 			if p.cmd != nil {

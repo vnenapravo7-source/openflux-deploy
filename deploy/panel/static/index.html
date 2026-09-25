@@ -34,7 +34,7 @@
     </aside>
     <main>
       <header><div><p class="eyebrow" id="accountLabel">OPENFLUX</p><h1 id="pageTitle">Обзор</h1></div>
-        <div class="header-actions"><span id="statusPill" class="status waiting"><i></i>Загрузка</span><button id="newConnectionTop" class="primary small">+ Подключение</button></div>
+        <div class="header-actions"><span id="statusPill" class="status waiting"><i></i>Загрузка</span><button id="quickMultiTop" class="secondary small hidden">Мульти-подключение</button><button id="newConnectionTop" class="primary small">+ Подключение</button></div>
       </header>
       <section id="view-overview" class="view active">
         <div id="updateNotice" class="update-notice hidden" role="status"><div><strong>Доступны обновления</strong><small id="updateNoticeText"></small></div><div class="header-actions"><button id="offerServerUpdate" class="secondary small hidden">Обновить сервер</button><button id="offerPanelUpdate" class="secondary small hidden">Обновить панель</button></div></div>
@@ -65,7 +65,17 @@
         </article>
       </section>
       <section id="view-connections" class="view">
-        <article class="card"><div class="card-head"><div><h2>Подключения</h2><p>Можно создать несколько подключений для одного пользователя</p></div><button id="showConnectionForm" class="primary small">+ Создать</button></div><div id="connectionsList" class="connection-list"></div></article>
+        <article class="card"><div class="card-head"><div><h2>Подключения</h2><p>Можно создать несколько подключений для одного пользователя</p></div></div><div id="connectionsList" class="connection-list"></div></article>
+        <article id="quickMultiCard" class="card form-card hidden"><div class="card-head"><div><h2>Быстрое мульти-подключение</h2><p>Direct + Yandex Docs + Mail.ru Docs, готовый профиль для Android</p></div><button id="cancelQuickMulti" class="secondary small" type="button">Закрыть</button></div>
+          <form id="quickMultiForm" class="quick-multi-form">
+            <label><span>Название</span><input id="quickMultiName" required maxlength="80" placeholder="Например, Мой мульти-профиль"></label>
+            <label><span>Ссылка Yandex Docs</span><input id="quickMultiYandex" type="url" required placeholder="https://disk.yandex.ru/i/…" autocomplete="off"><small><a href="https://docs.360.yandex.ru/" target="_blank" rel="noopener noreferrer">Открыть Yandex Docs ↗</a><br><b>Снимите</b> галочку «Перейти на новый редактор». Ссылку возьмите через «Поделиться» в документе.</small></label>
+            <label><span>Ссылка Mail.ru Docs</span><input id="quickMultiMail" type="url" required placeholder="https://cloud.mail.ru/public/…" autocomplete="off"><small><a href="https://doc.mail.ru/" target="_blank" rel="noopener noreferrer">Открыть Mail.ru Docs ↗</a><br>Ссылку возьмите через «Поделиться» в документе.</small></label>
+            <div class="quick-multi-summary"><b>Параметры будут выставлены автоматически</b><small>L4 · Batched + zstd · контекст шифрования — Yandex Docs · Direct порт, ключ и MTU — автоматически</small><small>Приоритет: Direct 100 → Yandex Docs 75 → Mail.ru Docs 25</small></div>
+            <div id="quickDirectSetupNotice" class="direct-setup-notice hidden"><strong>Для Direct в Docker сначала включите публикацию портов 39000–39015.</strong><button id="copyQuickDirectSetup" class="secondary small" type="button">Скопировать команду установки</button></div>
+            <div class="form-actions"><button type="submit" class="primary">Создать подключение</button></div>
+          </form>
+        </article>
         <article id="connectionEditor" class="card form-card hidden"><div class="card-head"><div><h2 id="editorTitle">Новое подключение</h2><p>Транспорт и кодек должны совпадать с мобильным клиентом</p></div><button id="cancelConnection" class="secondary small" type="button">Закрыть</button></div>
           <form id="connectionForm">
             <label class="switch-row"><span><b>Запустить exit-ноду</b><small>При выключении настройки сохранятся</small></span><input id="enabled" type="checkbox"><i></i></label>
@@ -79,7 +89,7 @@
               <div id="transportGuide" class="transport-guide wide"><a id="transportServiceLink" target="_blank" rel="noopener noreferrer"></a><small id="transportTip"></small></div>
               <label><span>Кодек</span><select id="codec"><option value="batched">Batched + zstd</option><option value="legacy">Legacy LZ4</option></select></label>
               <label><span>Исходящий IP <em>необязательно</em></span><input id="localIp" placeholder="автоопределение" autocomplete="off"></label>
-              <label class="wide"><span>Ключ шифрования <em>необязательно</em></span><input id="encryptionKey" placeholder="Создастся автоматически или вставьте ключ из клиента" autocomplete="off"><small>Пустое поле — панель создаст ключ. Можно вставить готовый ключ из клиента или указать абсолютный путь к файлу на сервере. Ключ панели копируется из карточки подключения.</small></label>
+              <label class="wide"><span>Ключ шифрования</span><input id="encryptionKey" placeholder="Пусто — панель создаст новый ключ" autocomplete="off"><small>Для нового подключения пустое поле создаёт отдельный ключ. При редактировании уже созданный ключ сохраняется. Скопировать ключ панели можно из карточки подключения.</small></label>
             </div>
             <label id="legacyNegotiateField" class="check"><input id="legacyNegotiate" type="checkbox"><span>Протокол Session для одного транспорта (--negotiate). В Android тоже выберите «Session» с одним транспортом. С обычным одиночным подключением этот режим несовместим, даже если ключ и URL совпадают.</span></label>
             <label class="check"><input id="sessionMode" type="checkbox"><span>Защищённая сессия OpenFlux 0.0.5 · один или несколько транспортов, автоматическое переключение</span></label>

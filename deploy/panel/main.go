@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const panelVersion = "0.6.7"
+const panelVersion = "0.6.8"
 
 //go:embed static/*
 var staticFiles embed.FS

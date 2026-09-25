@@ -2,6 +2,7 @@ const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const names = {yandex:"Yandex Docs",vyandex:"Yandex Volga",boards:"Yandex Board",mailru:"Mail.ru Docs",cupsonline:"Cups.online",direct:"Direct TCP"};
 let state = null, users = [], editing = null, editingUser = null, editUserAction = "", selectedLog = "", activeView = "overview";
+const revealedKeys = new Map(), revealedShares = new Map();
 let pendingUpdatePrompt=false, shownUpdateSignature="", currentUpdateSignature="";
 
 async function api(path, options={}) {
@@ -16,11 +17,12 @@ const escAttr = value => esc(value).replaceAll('"',"&quot;").replaceAll("'","&#3
 const bytes = (input=0) => { let n=Number(input)||0, i=0; const unit=["Б","КБ","МБ","ГБ"]; while(n>=1024&&i<3){n/=1024;i++} return `${n.toFixed(i?1:0)} ${unit[i]}`; };
 const duration = input => { const s=Number(input)||0,d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60); return d?`${d} д ${h} ч`:h?`${h} ч ${m} мин`:`${m} мин`; };
 function toast(message,error=false){const el=$("#toast");el.textContent=message;el.className=error?"show error":"show";setTimeout(()=>el.className="",3500)}
-function showLogin(){state=null;pendingUpdatePrompt=false;shownUpdateSignature="";$$(".connection-share code").forEach(el=>el.textContent="");$$(".connection-share img").forEach(el=>el.removeAttribute("src"));$("#updateModal").classList.add("hidden");navigate("overview");$("#appShell").classList.add("hidden");$("#loginScreen").classList.remove("hidden");}
+function showLogin(){state=null;pendingUpdatePrompt=false;shownUpdateSignature="";revealedKeys.clear();revealedShares.clear();$$(".connection-key code,.connection-share code").forEach(el=>el.textContent="");$$(".connection-share img").forEach(el=>el.removeAttribute("src"));$$(".connection-key,.connection-share").forEach(el=>el.classList.add("hidden"));$("#updateModal").classList.add("hidden");navigate("overview");$("#appShell").classList.add("hidden");$("#loginScreen").classList.remove("hidden");}
 function showApp(){ $("#loginScreen").classList.add("hidden");$("#appShell").classList.remove("hidden"); }
 function navigate(view){
   if(state?.me.role!=="admin"&&(view==="users"||view==="nodes"))view="overview";
   activeView=view;
+  $("#quickMultiTop").classList.toggle("hidden",view!=="connections");
   $$(".nav").forEach(el=>el.classList.toggle("active",el.dataset.view===view));
   $$(".view").forEach(el=>el.classList.toggle("active",el.id===`view-${view}`));
   $("#pageTitle").textContent={overview:"Обзор",instructions:"Инструкции",connections:"Подключения",account:"Мой профиль",users:"Пользователи",nodes:"Ноды",logs:"Журнал"}[view];
@@ -49,6 +51,7 @@ function connectionCard(c){
   const online=c.running&&!soloYandexAuth;
   const status=soloYandexAuth?"Yandex ждёт проверку на сервере":c.running?`Работает · ${duration(c.uptime)}`:c.enabled?`Не запущено${c.last_error?": "+c.last_error:""}`:"Выключено";
   const links=c.transports||[],cups=c.transport==="cupsonline"||links.some(link=>link.type==="cupsonline");
+  const revealedKey=revealedKeys.get(c.id)||"",revealedShare=revealedShares.get(c.id);
   const code=cups?`<div class="client-code"><small>Код для клиента Cups.online (поле URL)</small>${c.client_code?`<code>${esc(c.client_code)}</code><button class="secondary small" data-connection-action="copy" data-id="${esc(c.id)}">Копировать код</button>`:`<span>Код появится здесь после запуска и создания комнат.</span>`}</div>`:"";
   const summary=links.length?links.map(link=>`${names[link.type]||link.type} ${link.priority}`).join(" → "):names[c.transport]||c.transport;
   return `<div class="connection-card ${online?'running':''}">
@@ -58,14 +61,14 @@ function connectionCard(c){
     ${c.yandex_auth_required?`<div class="connection-url">Серверный Yandex получил SmartCaptcha и ещё не открыл документ. Проверка, пройденная на телефоне, сама по себе не подтверждает авторизацию exit-ноды.</div>`:""}
     ${c.negotiate&&!links.length?`<div class="connection-url">Протокол Session: на телефоне нужен режим Session с одним транспортом. Обычное одиночное подключение Android несовместимо — для него снимите галочку «Протокол Session» в настройках.</div>`:""}
     ${code}
-    ${c.key_managed?`<div class="connection-key hidden"><small>Общий ключ — не передавайте посторонним</small><code></code></div>`:""}
-    <div class="connection-share hidden"><small>QR и ссылка содержат ключ доступа. Показывайте их только своим устройствам.</small><img alt="QR-код OpenFlux для подключения"><code></code><button class="secondary small" data-connection-action="copy-share" data-id="${esc(c.id)}">Копировать ссылку</button></div>
-    <div class="connection-actions"><button class="secondary small" data-connection-action="share" data-id="${esc(c.id)}">Ссылка и QR</button>${c.key_managed?`<button class="secondary small" data-connection-action="key" data-id="${esc(c.id)}">Показать и копировать ключ</button>`:""}<button class="secondary small" data-connection-action="edit" data-id="${esc(c.id)}">Настроить</button><button class="secondary small" data-connection-action="restart" data-id="${esc(c.id)}">Перезапустить</button><button class="secondary small" data-connection-action="logs" data-id="${esc(c.id)}">Журнал</button><button class="danger small" data-connection-action="delete" data-id="${esc(c.id)}">Удалить</button></div>
+    ${c.key_managed?`<div class="connection-key ${revealedKey?'':'hidden'}"><small>Общий ключ — не передавайте посторонним</small><code>${esc(revealedKey)}</code></div>`:""}
+    <div class="connection-share ${revealedShare?'':'hidden'}"><small>QR и ссылка содержат ключ доступа. Показывайте их только своим устройствам.</small><img alt="QR-код OpenFlux для подключения" ${revealedShare?`src="${escAttr(revealedShare.qr)}"`:""}><code>${esc(revealedShare?.link||"")}</code><button class="secondary small" data-connection-action="copy-share" data-id="${esc(c.id)}">Копировать ссылку</button></div>
+    <div class="connection-actions"><button class="secondary small" data-connection-action="share" data-id="${esc(c.id)}">${revealedShare?'Скрыть ссылку и QR':'Ссылка и QR'}</button>${c.key_managed?`<button class="secondary small" data-connection-action="key" data-id="${esc(c.id)}">${revealedKey?'Скрыть ключ':'Показать и копировать ключ'}</button>`:""}<button class="secondary small" data-connection-action="edit" data-id="${esc(c.id)}">Настроить</button><button class="secondary small" data-connection-action="restart" data-id="${esc(c.id)}">Перезапустить</button><button class="secondary small" data-connection-action="logs" data-id="${esc(c.id)}">Журнал</button><button class="danger small" data-connection-action="delete" data-id="${esc(c.id)}">Удалить</button></div>
   </div>`;
 }
 function renderConnections(){
   const connections=state.connections||[];
-  const empty='<div class="empty">Подключений пока нет. Нажмите «+ Создать».</div>';
+  const empty='<div class="empty">Подключений пока нет. Нажмите «+ Подключение».</div>';
   $("#connectionsList").innerHTML=connections.length?connections.map(connectionCard).join(""):empty;
   $("#overviewConnections").innerHTML=connections.length?connections.slice(0,3).map(connectionCard).join(""):empty;
   const logSelect=$("#logConnection");if(!connections.some(c=>c.id===selectedLog))selectedLog=connections[0]?.id||"";
@@ -164,18 +167,28 @@ function transportChanged(){const kind=$("#transport").value,cups=kind==="cupson
   if(guide){$("#transportServiceLink").href=guide.url;$("#transportServiceLink").textContent=guide.label;$("#transportTip").innerHTML=guide.tip}
 }
 $("#transport").onchange=()=>{transportChanged();refreshSessionRows()};$("#enabled").onchange=()=>{transportChanged();refreshSessionRows()};$("#sessionMode").onchange=sessionChanged;$("#addSessionTransport").onclick=()=>{if(sessionRows().length<8)addSessionRow({type:"yandex",priority:50})};
-$("#copyDirectSetup").onclick=async()=>{try{await navigator.clipboard.writeText('OPENFLUX_INSTALL_MODE=docker bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/deploy.sh)"');toast("Команда скопирована. Запустите её на VPS от root.")}catch(e){toast(e.message,true)}};
+const copyDirectInstaller=async()=>{try{await navigator.clipboard.writeText('OPENFLUX_INSTALL_MODE=docker bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/deploy.sh)"');toast("Команда скопирована. Запустите её на VPS от root.")}catch(e){toast(e.message,true)}};
+$("#copyDirectSetup").onclick=copyDirectInstaller;$("#copyQuickDirectSetup").onclick=copyDirectInstaller;
 function openConnection(c){
   editing=c?.id||null;$("#editorTitle").textContent=c?`Настроить: ${c.name}`:"Новое подключение";
   $("#connectionName").value=c?.name||"";$("#enabled").checked=c?.enabled??true;$("#transport").value=c?.transport||"yandex";
   $("#mode").value=c?.mode||"l4";$("#codec").value=c?.codec||"batched";$("#docUrl").value=c?.url||"";$("#legacyNegotiate").checked=!!c?.negotiate;
-  $("#localIp").value=c?.local_ip||"";$("#encryptionKey").value=c?.encryption_key_file||"";$("#debug").checked=c?.debug??true;
+  $("#localIp").value=c?.local_ip||"";$("#encryptionKey").value=c?.key_managed?"":c?.encryption_key_file||"";$("#debug").checked=c?.debug??true;
   $("#sessionMode").checked=!!c?.transports?.length;$("#sessionTransportRows").replaceChildren();(c?.transports?.length?c.transports:[{type:c?.transport||"yandex",url:c?.url||"",priority:100}]).forEach(addSessionRow);$("#sessionContextUrl").value=c?.session_context_url||"";$("#directListen").value=c?.direct_listen||"";$("#legacyDirectListen").value=c?.direct_listen||"";$("#maxPacketSize").value=c?.max_packet_size||"";
   if(state.me.role==="admin")$("#connectionOwner").value=c?.owner_id||state.me.id;
   $("#connectionOwner").disabled=!!c;sessionChanged();$("#connectionEditor").classList.remove("hidden");navigate("connections");$("#connectionEditor").scrollIntoView({behavior:"smooth"});
 }
-$("#showConnectionForm").onclick=$("#newConnectionTop").onclick=()=>openConnection();
+$("#newConnectionTop").onclick=()=>{$("#quickMultiCard").classList.add("hidden");openConnection()};
+$("#quickMultiTop").onclick=()=>{$("#connectionEditor").classList.add("hidden");$("#quickMultiForm").reset();$("#quickDirectSetupNotice").classList.toggle("hidden",state?.direct_ports_ready!==false);$("#quickMultiCard").classList.remove("hidden");navigate("connections");$("#quickMultiCard").scrollIntoView({behavior:"smooth"})};
+$("#cancelQuickMulti").onclick=()=>$("#quickMultiCard").classList.add("hidden");
 $("#cancelConnection").onclick=()=>$("#connectionEditor").classList.add("hidden");
+$("#quickMultiForm").onsubmit=async event=>{
+  event.preventDefault();
+  const form=event.target,submit=form.querySelector('[type="submit"]');submit.disabled=true;
+  const c={name:$("#quickMultiName").value.trim(),owner_id:state.me.id,enabled:true,transport:"yandex",url:"",mode:"l4",codec:"batched",local_ip:"",encryption_key_file:"",negotiate:false,transports:[{type:"direct",priority:100,url:""},{type:"yandex",priority:75,url:$("#quickMultiYandex").value.trim()},{type:"mailru",priority:25,url:$("#quickMultiMail").value.trim()}],session_context_url:"",direct_listen:"",max_packet_size:0,debug:true};
+  try{await api("/api/connections",{method:"POST",...json(c)});form.reset();$("#quickMultiCard").classList.add("hidden");toast("Мульти-подключение создано");await refresh()}
+  catch(e){toast(e.message,true)}finally{submit.disabled=false}
+};
 $("#connectionForm").onsubmit=async event=>{
   event.preventDefault();const advanced=$("#sessionMode").checked;if(advanced&&!sessionRows().length)return toast("Добавьте хотя бы один транспорт",true);const c={name:$("#connectionName").value.trim(),owner_id:state.me.role==="admin"?$("#connectionOwner").value:state.me.id,enabled:$("#enabled").checked,transport:advanced?"yandex":$("#transport").value,url:advanced?"":$("#docUrl").value.trim(),mode:$("#mode").value,codec:$("#codec").value,local_ip:$("#localIp").value.trim(),encryption_key_file:$("#encryptionKey").value.trim(),negotiate:advanced?false:$("#legacyNegotiate").checked,transports:advanced?sessionRows():[],session_context_url:advanced?$("#sessionContextUrl").value.trim():"",direct_listen:advanced?$("#directListen").value.trim():$("#transport").value==="direct"?$("#legacyDirectListen").value.trim():"",max_packet_size:advanced?Number($("#maxPacketSize").value)||0:0,debug:$("#debug").checked};
   try{await api(editing?`/api/connections/${editing}`:"/api/connections",{method:editing?"PUT":"POST",...json(c)});$("#connectionEditor").classList.add("hidden");toast("Подключение сохранено");await refresh();}catch(e){toast(e.message,true)}
@@ -188,22 +201,23 @@ document.addEventListener("click",async event=>{
       if(action==="edit")return openConnection(c);
       if(action==="logs"){selectedLog=id;renderConnections();return navigate("logs")}
       if(action==="copy"){if(!c.client_code)return;await navigator.clipboard.writeText(c.client_code);return toast("Код Cups.online скопирован")}
-      if(action==="copy-share"){const link=button.closest(".connection-card").querySelector(".connection-share code").textContent;await navigator.clipboard.writeText(link);return toast("Ссылка OpenFlux скопирована. Она содержит ключ доступа.")}
+      if(action==="copy-share"){const link=revealedShares.get(id)?.link;if(!link)return;await navigator.clipboard.writeText(link);return toast("Ссылка OpenFlux скопирована. Она содержит ключ доступа.")}
       if(action==="share"){
-        const holder=button.closest(".connection-card").querySelector(".connection-share");
-        if(!holder.classList.contains("hidden")){holder.classList.add("hidden");holder.querySelector("code").textContent="";holder.querySelector("img").removeAttribute("src");return}
+        if(revealedShares.has(id)){revealedShares.delete(id);renderConnections();return}
         let host="";
         if(c.transport==="direct"||c.transports?.some(link=>link.type==="direct")){
           host=prompt("Публичный IP-адрес или домен VPS для Direct:",location.hostname)||"";
           if(!host.trim())return;
         }
         const result=await api(`/api/connections/${id}/share`,{method:"POST",...json({host:host.trim()})});
-        holder.querySelector("code").textContent=result.link;
-        holder.querySelector("img").src=result.qr;
-        holder.classList.remove("hidden");
+        revealedShares.set(id,result);renderConnections();
         return;
       }
-      if(action==="key"){const result=await api(`/api/connections/${id}/key`,{method:"POST"});const holder=button.closest(".connection-card").querySelector(".connection-key");holder.querySelector("code").textContent=result.key;holder.classList.remove("hidden");try{await navigator.clipboard.writeText(result.key);toast("Ключ показан и скопирован. Не передавайте его посторонним.")}catch(_){toast("Ключ показан. Скопируйте его вручную.")}return}
+      if(action==="key"){
+        if(revealedKeys.has(id)){revealedKeys.delete(id);renderConnections();return}
+        const result=await api(`/api/connections/${id}/key`,{method:"POST"});revealedKeys.set(id,result.key);renderConnections();
+        try{await navigator.clipboard.writeText(result.key);toast("Ключ показан и скопирован. Не передавайте посторонним.")}catch(_){toast("Ключ показан. Скопируйте его вручную.")}return;
+      }
       if(action==="delete"&&!confirm(`Удалить подключение «${c.name}»?`))return;
       await api(`/api/connections/${id}${action==="restart"?"/restart":""}`,{method:action==="delete"?"DELETE":"POST"});toast(action==="delete"?"Подключение удалено":"Подключение перезапущено");return refresh();
     }
