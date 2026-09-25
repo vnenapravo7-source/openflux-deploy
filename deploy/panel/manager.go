@@ -31,6 +31,8 @@ type Config struct {
 	Codec             string `json:"codec"`
 	LocalIP           string `json:"local_ip"`
 	EncryptionKeyFile string `json:"encryption_key_file"`
+	Negotiate        bool   `json:"negotiate,omitempty"`
+	SessionContextURL string `json:"session_context_url,omitempty"`
 	Transports        []TransportLink `json:"transports,omitempty"`
 	DirectListen      string `json:"direct_listen,omitempty"`
 	MaxPacketSize     int    `json:"max_packet_size,omitempty"`
@@ -56,6 +58,7 @@ type Connection struct {
 type ConnectionView struct {
 	Connection
 	KeyManaged bool `json:"key_managed"`
+	SessionContext string `json:"session_context,omitempty"`
 	Running    bool     `json:"running"`
 	PID        int      `json:"pid"`
 	Uptime     int64    `json:"uptime"`
@@ -151,6 +154,8 @@ func validateConfig(c Config) error {
 		return fmt.Errorf("local IP is invalid")
 	}
 	if len(c.Transports) == 0 {
+		if c.SessionContextURL != "" { return fmt.Errorf("session context URL requires a protected session") }
+		if c.Negotiate && c.Codec != "batched" { return fmt.Errorf("negotiation requires batched codec") }
 		if c.DirectListen != "" || c.MaxPacketSize != 0 {
 			if c.Transport != "direct" || c.MaxPacketSize != 0 { return fmt.Errorf("session settings require at least one transport") }
 		}
@@ -162,6 +167,9 @@ func validateConfig(c Config) error {
 	}
 	if c.Codec != "batched" {
 		return fmt.Errorf("authenticated session requires batched codec")
+	}
+	if c.SessionContextURL != "" {
+		if err := validateTransportURL("yandex", c.SessionContextURL, true); err != nil { return fmt.Errorf("session context: %w", err) }
 	}
 	if c.MaxPacketSize != 0 && (c.MaxPacketSize < 1280 || c.MaxPacketSize > 65000) {
 		return fmt.Errorf("maximum packet size must be 1280–65000")
@@ -359,12 +367,14 @@ func connectionArgs(c Connection) []string {
 	args := []string{"--role=exit", "--mode=" + c.Mode, "--codec=" + c.Codec}
 	if len(c.Transports) == 0 {
 		args = append(args, "--transport="+c.Transport)
+		if c.Negotiate { args = append(args, "--negotiate") }
 		if c.Transport == "direct" { args = append(args, "--direct-listen="+c.DirectListen) }
 		if c.URL != "" {
 			args = append(args, "--url="+c.URL)
 		}
 	} else {
 		args = append(args, "--config="+sessionConfigPath(c.ID), "--negotiate")
+		if contextURL := sessionContextURL(c); contextURL != "" { args = append(args, "--url="+contextURL) }
 		if c.MaxPacketSize != 0 {
 			args = append(args, fmt.Sprintf("--max-packet-size=%d", c.MaxPacketSize))
 		}
@@ -380,6 +390,19 @@ func connectionArgs(c Connection) []string {
 		args = append(args, "--debug")
 	}
 	return args
+}
+
+// OpenFlux derives the AES transport context from --url even in multi-carrier
+// mode. The first Yandex document is the mobile client's default context.
+func sessionContextURL(c Connection) string {
+	if c.SessionContextURL != "" { return c.SessionContextURL }
+	for _, link := range c.Transports {
+		if link.Type == "yandex" && link.URL != "" { return link.URL }
+	}
+	for _, link := range c.Transports {
+		if link.URL != "" { return link.URL }
+	}
+	return ""
 }
 
 func managedKeyPath(id string) string {
@@ -409,7 +432,7 @@ func prepareKey(c *Connection, previous *Connection) (bool, error) {
 		c.EncryptionKeyFile = path
 		return true, nil
 	}
-	if !c.Enabled || (c.Transport != "direct" && len(c.Transports) == 0) || c.EncryptionKeyFile != "" { return false, nil }
+	if !c.Enabled || (c.Transport != "direct" && !c.Negotiate && len(c.Transports) == 0) || c.EncryptionKeyFile != "" { return false, nil }
 	if previous != nil && previous.EncryptionKeyFile != "" {
 		c.EncryptionKeyFile = previous.EncryptionKeyFile
 		return false, nil
@@ -471,6 +494,11 @@ func (m *Manager) startLocked(id string) error {
 			return fmt.Errorf("this server binary does not support authenticated multi-transport sessions; update the server first")
 		}
 		if err := writeSessionConfig(c); err != nil { return err }
+	} else if c.Negotiate {
+		help, err := exec.Command(m.binaryPath, "--help").CombinedOutput()
+		if err != nil || !strings.Contains(string(help), "--negotiate") {
+			return fmt.Errorf("this server binary does not support authenticated negotiation; update the server first")
+		}
 	}
 	cmd := exec.Command(m.binaryPath, connectionArgs(c)...)
 	pipe, err := cmd.StdoutPipe()
@@ -757,6 +785,7 @@ func (m *Manager) connectionViews(user User) []ConnectionView {
 			continue
 		}
 		v := ConnectionView{Connection: c, Logs: []string{}, KeyManaged: c.EncryptionKeyFile != "" && c.EncryptionKeyFile == managedKeyPath(c.ID)}
+		if len(c.Transports) > 0 { v.SessionContext = sessionContextURL(c) }
 		if p := m.processes[c.ID]; p != nil {
 			v.Restarts, v.LastError, v.Logs, v.ClientCode = p.restarts, p.lastError, append([]string{}, p.logs...), p.clientCode
 			if p.cmd != nil {

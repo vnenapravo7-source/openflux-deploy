@@ -81,12 +81,14 @@
               <label><span>Исходящий IP <em>необязательно</em></span><input id="localIp" placeholder="автоопределение" autocomplete="off"></label>
               <label class="wide"><span>Ключ шифрования <em>необязательно</em></span><input id="encryptionKey" placeholder="Создастся автоматически или вставьте ключ из клиента" autocomplete="off"><small>Пустое поле — панель создаст ключ. Можно вставить готовый ключ из клиента или указать абсолютный путь к файлу на сервере. Ключ панели копируется из карточки подключения.</small></label>
             </div>
+            <label id="legacyNegotiateField" class="check"><input id="legacyNegotiate" type="checkbox"><span>Защищённое согласование для одного транспорта (--negotiate). Требуется клиент с тем же ключом и URL.</span></label>
             <label class="check"><input id="sessionMode" type="checkbox"><span>Защищённая сессия OpenFlux 0.0.5 · несколько транспортов и автоматическое переключение</span></label>
             <div id="directSetupNotice" class="direct-setup-notice hidden"><strong>Docker ещё не подготовлен для Direct.</strong> Порты задаются при создании контейнера. Один раз запустите обновлённый установщик на VPS; затем панель будет выбирать порт сама. <button id="copyDirectSetup" class="secondary small" type="button">Скопировать команду</button></div>
             <div id="sessionOptions" class="session-options hidden">
               <p>Требуются Batched, общий ключ шифрования и клиент с поддержкой <code>--negotiate</code>. Нынешние мобильные сборки могут не поддерживать этот режим. Не переключайте работающее подключение, пока не проверите клиент.</p>
               <div id="sessionTransportRows" class="session-transport-rows"></div>
               <button id="addSessionTransport" class="secondary small" type="button">+ Добавить транспорт</button>
+              <label class="wide"><span>URL контекста шифрования <em>необязательно</em></span><input id="sessionContextUrl" type="url" placeholder="Автоматически: первый Yandex Docs" autocomplete="off"><small>Оставьте пустым: панель возьмёт первый Yandex Docs, а если его нет — первый документ. Укажите вручную только если клиент использует другой URL контекста. Он должен совпадать на обеих сторонах.</small></label>
               <div class="form-grid">
                 <label><span>Порт Direct на сервере</span><input id="directListen" placeholder="Выберется автоматически" autocomplete="off"><small>Оставьте пустым: панель выберет свободный порт. Если у провайдера VPS включён отдельный сетевой фильтр, разрешите в нём выбранный порт.</small></label>
                 <label><span>Максимальный IPv4-пакет</span><input id="maxPacketSize" type="number" min="1280" max="65000" placeholder="65000"><small>Необязательно; предел 1280–65000.</small></label>

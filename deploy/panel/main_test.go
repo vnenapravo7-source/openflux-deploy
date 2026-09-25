@@ -23,6 +23,8 @@ func TestValidateConfig(t *testing.T) {
 		{"disabled defaults", defaults(), true},
 		{"yandex needs url", Config{Enabled: true, Transport: "yandex", Mode: "l3", Codec: "batched"}, false},
 		{"yandex url", Config{Enabled: true, Transport: "yandex", URL: "https://docs.yandex.ru/docs/view", Mode: "l3", Codec: "batched"}, true},
+		{"single negotiated yandex", Config{Enabled: true, Transport: "yandex", URL: "https://docs.yandex.ru/docs/view", Mode: "l4", Codec: "batched", Negotiate: true}, true},
+		{"single negotiated legacy codec", Config{Enabled: true, Transport: "yandex", URL: "https://docs.yandex.ru/docs/view", Mode: "l4", Codec: "legacy", Negotiate: true}, false},
 		{"board url", Config{Enabled: true, Transport: "boards", URL: "https://boards.yandex.ru/guest/?hash=example", Mode: "l4", Codec: "batched"}, true},
 		{"board missing hash", Config{Enabled: true, Transport: "boards", URL: "https://boards.yandex.ru/guest/", Mode: "l4", Codec: "batched"}, false},
 		{"board wrong host", Config{Enabled: true, Transport: "boards", URL: "https://example.com/guest/?hash=example", Mode: "l4", Codec: "batched"}, false},
@@ -34,6 +36,7 @@ func TestValidateConfig(t *testing.T) {
 		{"session without key", Config{Transport: "yandex", Mode: "l4", Codec: "batched", Transports: []TransportLink{{Type: "direct", Priority: 100}}, DirectListen: ":39000"}, true},
 		{"standalone direct", Config{Enabled: true, Transport: "direct", Mode: "l4", Codec: "batched"}, true},
 		{"duplicate documents", Config{Enabled: true, Transport: "yandex", Mode: "l4", Codec: "batched", Transports: []TransportLink{{Type: "yandex", URL: "https://disk.yandex.ru/i/one", Priority: 50}, {Type: "yandex", URL: "https://disk.yandex.ru/i/two", Priority: 50}}}, true},
+		{"invalid session context", Config{Enabled: true, Transport: "yandex", Mode: "l4", Codec: "batched", SessionContextURL: "file:///secret", Transports: []TransportLink{{Type: "direct", Priority: 50}}}, false},
 		{"session legacy codec", Config{Transport: "yandex", Mode: "l4", Codec: "legacy", EncryptionKeyFile: "/key", Transports: []TransportLink{{Type: "direct", Priority: 100}}, DirectListen: ":39000"}, false},
 		{"session duplicate transport", Config{Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/key", Transports: []TransportLink{{Type: "direct", Priority: 100}, {Type: "direct", Priority: 50}}, DirectListen: ":39000"}, false},
 		{"session invalid packet size", Config{Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/key", Transports: []TransportLink{{Type: "direct", Priority: 100}}, DirectListen: ":39000", MaxPacketSize: 1000}, false},
@@ -72,17 +75,35 @@ func TestBoardConnectionArgs(t *testing.T) {
 	}
 }
 
+func TestSingleNegotiatedConnectionArgs(t *testing.T) {
+	c := Connection{Config: Config{Transport: "mailru", URL: "https://cloud.mail.ru/public/example", Mode: "l4", Codec: "batched", Negotiate: true, EncryptionKeyFile: "/etc/openflux/secret.key"}}
+	args := strings.Join(connectionArgs(c), " ")
+	for _, want := range []string{"--transport=mailru", "--url=https://cloud.mail.ru/public/example", "--negotiate", "--encryption-key-file=/etc/openflux/secret.key"} {
+		if !strings.Contains(args, want) { t.Fatalf("missing %q in %s", want, args) }
+	}
+}
+
 func TestAuthenticatedConnectionArgs(t *testing.T) {
 	c := Connection{ID: "example", Config: Config{Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/etc/openflux-deploy/key", Transports: []TransportLink{{Type: "direct", Priority: 100}, {Type: "yandex", URL: "https://docs.yandex.ru/example", Priority: 50}}, DirectListen: ":39000", MaxPacketSize: 1500}}
 	args := strings.Join(connectionArgs(c), " ")
-	for _, expected := range []string{"--config=", "--negotiate", "--max-packet-size=1500", "--cookie-store="} {
+	for _, expected := range []string{"--config=", "--negotiate", "--url=https://docs.yandex.ru/example", "--max-packet-size=1500", "--cookie-store="} {
 		if !strings.Contains(args, expected) {
 			t.Fatalf("missing %s in %s", expected, args)
 		}
 	}
-	if strings.Contains(args, "--url=") {
-		t.Fatalf("session must not set legacy URL (changes handshake context): %s", args)
+	if strings.Contains(args, "--yandex-url=") {
+		t.Fatalf("named transport URL must stay in the config file: %s", args)
 	}
+}
+
+func TestSessionContextSelectsYandexAndAllowsOverride(t *testing.T) {
+	c := Connection{ID: "mix", Config: Config{Transport: "yandex", Mode: "l4", Codec: "batched", Transports: []TransportLink{{Type: "direct", Priority: 100}, {Type: "mailru", URL: "https://cloud.mail.ru/public/mail", Priority: 30}, {Type: "yandex", URL: "https://disk.yandex.ru/i/doc", Priority: 50}}}}
+	if got := sessionContextURL(c); got != "https://disk.yandex.ru/i/doc" { t.Fatalf("automatic context = %q", got) }
+	c.SessionContextURL = "https://disk.yandex.ru/i/another"
+	if got := sessionContextURL(c); got != c.SessionContextURL { t.Fatalf("override context = %q", got) }
+	c.SessionContextURL = ""
+	c.Transports = c.Transports[:2]
+	if got := sessionContextURL(c); got != "https://cloud.mail.ru/public/mail" { t.Fatalf("mail-only context = %q", got) }
 }
 
 func TestNamedSessionConfigAndManagedKey(t *testing.T) {
