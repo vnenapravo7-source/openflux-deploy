@@ -146,6 +146,7 @@
       </section>
       <section id="view-nodes" class="view admin-only">
         <article class="card"><div class="card-head"><div><h2>Подключённые серверы</h2><p>Статус и управление удалёнными OpenFlux-нодами</p></div><button id="showAddNode" class="primary small">+ Добавить ноду</button></div>
+          <div class="node-status-notice"><b>Ноды пока в демонстрационном режиме.</b> Раздел отображает интерфейс; создание подключений на удалённых серверах и перенос между ними ещё не реализованы.</div>
           <div class="node-install-guide">
             <div class="node-guide-title"><span class="node-guide-icon">↗</span><div><b>Как добавить сервер</b><small>На втором VPS установите OpenFlux в режиме ноды. Установщик сам выберет Docker или systemd.</small></div></div>
             <div class="node-install-command"><code id="nodeInstallCommand">sudo bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/deploy.sh)" -- --role node</code><button id="copyNodeInstallCommand" type="button" class="secondary small">Копировать</button></div>
