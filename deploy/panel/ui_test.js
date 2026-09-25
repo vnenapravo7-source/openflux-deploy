@@ -29,6 +29,8 @@ assert.match(render('<img src=x onerror="alert(1)">'), /&lt;img/);
 assert.doesNotMatch(render("[bad](javascript:alert(1))"), /href=/);
 assert.match(render("[ok](https://example.com/?q=1&x=2)"), /href="https:\/\/example.com\/\?q=1&amp;x=2"/);
 const html = fs.readFileSync(path.join(__dirname, "static", "index.html"), "utf8");
+assert.match(html, /В Android тоже выберите «Session» с одним транспортом/);
+assert.match(html, /С обычным одиночным подключением этот режим несовместим/);
 for (const [id, name] of [["instructionKind", "kind"], ["instructionMediaTitle", "title"], ["instructionFile", "file"]]) {
   assert.match(html, new RegExp(`id="${id}" name="${name}"`), `${id} must be included in FormData`);
 }
@@ -41,4 +43,3 @@ for (const [id, name] of [["instructionKind", "kind"], ["instructionMediaTitle",
   assert.deepEqual(uploaded.parts, [["kind", "image", undefined], ["title", "Sample", undefined], ["file", file, "sample.png"]]);
   console.log("UI Markdown and media upload checks passed");
 })().catch(error => {console.error(error); process.exitCode = 1});
-
