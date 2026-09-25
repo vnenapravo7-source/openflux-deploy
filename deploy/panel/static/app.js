@@ -16,7 +16,7 @@ const escAttr = value => esc(value).replaceAll('"',"&quot;").replaceAll("'","&#3
 const bytes = (input=0) => { let n=Number(input)||0, i=0; const unit=["Б","КБ","МБ","ГБ"]; while(n>=1024&&i<3){n/=1024;i++} return `${n.toFixed(i?1:0)} ${unit[i]}`; };
 const duration = input => { const s=Number(input)||0,d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60); return d?`${d} д ${h} ч`:h?`${h} ч ${m} мин`:`${m} мин`; };
 function toast(message,error=false){const el=$("#toast");el.textContent=message;el.className=error?"show error":"show";setTimeout(()=>el.className="",3500)}
-function showLogin(){state=null;pendingUpdatePrompt=false;shownUpdateSignature="";$("#updateModal").classList.add("hidden");navigate("overview");$("#appShell").classList.add("hidden");$("#loginScreen").classList.remove("hidden");}
+function showLogin(){state=null;pendingUpdatePrompt=false;shownUpdateSignature="";$$(".connection-share code").forEach(el=>el.textContent="");$$(".connection-share img").forEach(el=>el.removeAttribute("src"));$("#updateModal").classList.add("hidden");navigate("overview");$("#appShell").classList.add("hidden");$("#loginScreen").classList.remove("hidden");}
 function showApp(){ $("#loginScreen").classList.add("hidden");$("#appShell").classList.remove("hidden"); }
 function navigate(view){
   if(state?.me.role!=="admin"&&(view==="users"||view==="nodes"))view="overview";
@@ -59,7 +59,8 @@ function connectionCard(c){
     ${c.negotiate&&!links.length?`<div class="connection-url">Протокол Session: на телефоне нужен режим Session с одним транспортом. Обычное одиночное подключение Android несовместимо — для него снимите галочку «Протокол Session» в настройках.</div>`:""}
     ${code}
     ${c.key_managed?`<div class="connection-key hidden"><small>Общий ключ — не передавайте посторонним</small><code></code></div>`:""}
-    <div class="connection-actions">${c.key_managed?`<button class="secondary small" data-connection-action="key" data-id="${esc(c.id)}">Показать и копировать ключ</button>`:""}<button class="secondary small" data-connection-action="edit" data-id="${esc(c.id)}">Настроить</button><button class="secondary small" data-connection-action="restart" data-id="${esc(c.id)}">Перезапустить</button><button class="secondary small" data-connection-action="logs" data-id="${esc(c.id)}">Журнал</button><button class="danger small" data-connection-action="delete" data-id="${esc(c.id)}">Удалить</button></div>
+    <div class="connection-share hidden"><small>QR и ссылка содержат ключ доступа. Показывайте их только своим устройствам.</small><img alt="QR-код OpenFlux для подключения"><code></code><button class="secondary small" data-connection-action="copy-share" data-id="${esc(c.id)}">Копировать ссылку</button></div>
+    <div class="connection-actions"><button class="secondary small" data-connection-action="share" data-id="${esc(c.id)}">Ссылка и QR</button>${c.key_managed?`<button class="secondary small" data-connection-action="key" data-id="${esc(c.id)}">Показать и копировать ключ</button>`:""}<button class="secondary small" data-connection-action="edit" data-id="${esc(c.id)}">Настроить</button><button class="secondary small" data-connection-action="restart" data-id="${esc(c.id)}">Перезапустить</button><button class="secondary small" data-connection-action="logs" data-id="${esc(c.id)}">Журнал</button><button class="danger small" data-connection-action="delete" data-id="${esc(c.id)}">Удалить</button></div>
   </div>`;
 }
 function renderConnections(){
@@ -187,6 +188,21 @@ document.addEventListener("click",async event=>{
       if(action==="edit")return openConnection(c);
       if(action==="logs"){selectedLog=id;renderConnections();return navigate("logs")}
       if(action==="copy"){if(!c.client_code)return;await navigator.clipboard.writeText(c.client_code);return toast("Код Cups.online скопирован")}
+      if(action==="copy-share"){const link=button.closest(".connection-card").querySelector(".connection-share code").textContent;await navigator.clipboard.writeText(link);return toast("Ссылка OpenFlux скопирована. Она содержит ключ доступа.")}
+      if(action==="share"){
+        const holder=button.closest(".connection-card").querySelector(".connection-share");
+        if(!holder.classList.contains("hidden")){holder.classList.add("hidden");holder.querySelector("code").textContent="";holder.querySelector("img").removeAttribute("src");return}
+        let host="";
+        if(c.transport==="direct"||c.transports?.some(link=>link.type==="direct")){
+          host=prompt("Публичный IP-адрес или домен VPS для Direct:",location.hostname)||"";
+          if(!host.trim())return;
+        }
+        const result=await api(`/api/connections/${id}/share`,{method:"POST",...json({host:host.trim()})});
+        holder.querySelector("code").textContent=result.link;
+        holder.querySelector("img").src=result.qr;
+        holder.classList.remove("hidden");
+        return;
+      }
       if(action==="key"){const result=await api(`/api/connections/${id}/key`,{method:"POST"});const holder=button.closest(".connection-card").querySelector(".connection-key");holder.querySelector("code").textContent=result.key;holder.classList.remove("hidden");try{await navigator.clipboard.writeText(result.key);toast("Ключ показан и скопирован. Не передавайте его посторонним.")}catch(_){toast("Ключ показан. Скопируйте его вручную.")}return}
       if(action==="delete"&&!confirm(`Удалить подключение «${c.name}»?`))return;
       await api(`/api/connections/${id}${action==="restart"?"/restart":""}`,{method:action==="delete"?"DELETE":"POST"});toast(action==="delete"?"Подключение удалено":"Подключение перезапущено");return refresh();

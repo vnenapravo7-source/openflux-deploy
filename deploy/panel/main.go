@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const panelVersion = "0.6.6"
+const panelVersion = "0.6.7"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -357,8 +357,27 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(parts) == 2 && parts[1] == "key" && r.Method == http.MethodPost {
 			secret, err := s.mgr.connectionKey(parts[0])
-			if err != nil { apiError(w, http.StatusBadRequest, err.Error()); return }
+			if err != nil {
+				apiError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 			writeJSON(w, http.StatusOK, map[string]string{"key": secret})
+			return
+		}
+		if len(parts) == 2 && parts[1] == "share" && r.Method == http.MethodPost {
+			var input struct {
+				Host string `json:"host"`
+			}
+			if err := decodeBody(w, r, &input); err != nil {
+				apiError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			result, err := s.mgr.connectionShare(parts[0], input.Host)
+			if err != nil {
+				apiError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, result)
 			return
 		}
 		if len(parts) == 2 && parts[1] == "restart" && r.Method == http.MethodPost {
