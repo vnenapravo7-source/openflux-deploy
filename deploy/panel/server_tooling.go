@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -16,30 +17,47 @@ var deployRefName = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 // A panel-only upgrade does not replace the updater or its upstream patches
 // inside an existing Docker container. Refresh those files before rebuilding
 // the server so a new patch can be applied at the same upstream commit.
-func refreshServerTooling(updatePath string) error {
+func refreshServerTooling(updatePath, fallbackDir string) (string, error) {
 	repo := env("OPENFLUX_DEPLOY_REPO", "vnenapravo7-source/openflux-deploy")
 	ref := env("OPENFLUX_DEPLOY_REF", "main")
 	if !deployRepoName.MatchString(repo) || !deployRefName.MatchString(ref) {
-		return fmt.Errorf("invalid deployment repository or branch")
+		return "", fmt.Errorf("invalid deployment repository or branch")
 	}
 	tmp, err := os.MkdirTemp("", "openflux-tooling-")
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer os.RemoveAll(tmp)
 	source := filepath.Join(tmp, "source")
-	cmd := exec.Command("git", "clone", "--quiet", "--depth", "1", "--single-branch", "--branch", ref, "https://github.com/"+repo+".git", source)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "clone", "--quiet", "--depth", "1", "--single-branch", "--branch", ref, "https://github.com/"+repo+".git", source)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("download server fixes: %w: %s", err, string(out))
+		return "", fmt.Errorf("download server fixes: %w: %s", err, string(out))
 	}
 	deploy := filepath.Join(source, "deploy")
-	dest := filepath.Dir(updatePath)
+	primaryDir := filepath.Dir(updatePath)
+	return installServerToolingWithFallback(deploy, primaryDir, fallbackDir)
+}
+
+func installServerToolingWithFallback(deployDir, primaryDir, fallbackDir string) (string, error) {
+	if err := installServerToolingTo(deployDir, primaryDir); err == nil {
+		return filepath.Join(primaryDir, "update.sh"), nil
+	} else if filepath.Clean(fallbackDir) == filepath.Clean(primaryDir) {
+		return "", fmt.Errorf("install server fixes: %w", err)
+	} else if fallbackErr := installServerToolingTo(deployDir, fallbackDir); fallbackErr != nil {
+		return "", fmt.Errorf("install server fixes in %s: %v; writable fallback %s: %w", primaryDir, err, fallbackDir, fallbackErr)
+	}
+	return filepath.Join(fallbackDir, "update.sh"), nil
+}
+
+func installServerToolingTo(deployDir, dest string) error {
 	for _, name := range []string{"update.sh", "patch-upstream.sh"} {
-		if err := installToolingFile(filepath.Join(deploy, name), filepath.Join(dest, name), 0755); err != nil {
+		if err := installToolingFile(filepath.Join(deployDir, name), filepath.Join(dest, name), 0755); err != nil {
 			return err
 		}
 	}
-	patches, err := filepath.Glob(filepath.Join(deploy, "patches", "*.patch"))
+	patches, err := filepath.Glob(filepath.Join(deployDir, "patches", "*.patch"))
 	if err != nil {
 		return err
 	}
@@ -55,6 +73,40 @@ func refreshServerTooling(updatePath string) error {
 		}
 	}
 	return nil
+}
+
+func refreshPanelUpdateScript(updatePath, fallbackDir string) (string, error) {
+	repo := env("OPENFLUX_DEPLOY_REPO", "vnenapravo7-source/openflux-deploy")
+	ref := env("OPENFLUX_DEPLOY_REF", "main")
+	if !deployRepoName.MatchString(repo) || !deployRefName.MatchString(ref) {
+		return "", fmt.Errorf("invalid deployment repository or branch")
+	}
+	tmp, err := os.MkdirTemp("", "openflux-panel-tooling-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(tmp)
+	source := filepath.Join(tmp, "source")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "clone", "--quiet", "--depth", "1", "--single-branch", "--branch", ref, "https://github.com/"+repo+".git", source)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("download panel updater: %w: %s", err, string(out))
+	}
+	src := filepath.Join(source, "deploy", "panel-update.sh")
+	return installToolingFileWithFallback(src, "panel-update.sh", filepath.Dir(updatePath), fallbackDir, 0755)
+}
+
+func installToolingFileWithFallback(source, name, primaryDir, fallbackDir string, mode os.FileMode) (string, error) {
+	primary := filepath.Join(primaryDir, name)
+	if err := installToolingFile(source, primary, mode); err == nil {
+		return primary, nil
+	} else if filepath.Clean(fallbackDir) == filepath.Clean(primaryDir) {
+		return "", fmt.Errorf("install %s: %w", name, err)
+	} else if fallbackErr := installToolingFile(source, filepath.Join(fallbackDir, name), mode); fallbackErr != nil {
+		return "", fmt.Errorf("install %s in %s: %v; writable fallback %s: %w", name, primaryDir, err, fallbackDir, fallbackErr)
+	}
+	return filepath.Join(fallbackDir, name), nil
 }
 
 func installToolingFile(source, dest string, mode os.FileMode) error {

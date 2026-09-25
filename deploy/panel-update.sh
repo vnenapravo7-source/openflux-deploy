@@ -85,4 +85,3 @@ mv "$REVISION_FILE.new" "$REVISION_FILE"
 say "installed $CHECKED_OUT; previous binary: $PANEL_BIN.rollback"
 
 restart_panel
-

@@ -40,7 +40,10 @@ func (m *Manager) rollbackServer() error {
 	m.serverAction = "rollback"
 	m.mu.Unlock()
 	go func() {
-		out, err := exec.Command(m.updatePath, "--rollback").CombinedOutput()
+		scriptPath := m.serverUpdateScriptPath()
+		cmd := exec.Command(scriptPath, "--rollback")
+		cmd.Env = append(os.Environ(), "OPENFLUX_PATCH_DIR="+filepath.Dir(scriptPath))
+		out, err := cmd.CombinedOutput()
 		if err == nil {
 			if disableErr := m.setAutoUpdate(false); disableErr != nil {
 				err = fmt.Errorf("rollback completed, but automatic updates could not be disabled: %w", disableErr)

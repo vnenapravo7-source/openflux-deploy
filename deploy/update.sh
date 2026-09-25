@@ -7,7 +7,7 @@ STATE_DIR="${OPENFLUX_STATE_DIR:-/var/lib/openflux-deploy}"
 BINARY="${OPENFLUX_BINARY:-$STATE_DIR/bin/openflux}"
 VERSION_FILE="$STATE_DIR/upstream-version"
 PATCH_FILE="$STATE_DIR/server-patch-revision"
-PATCH_DIR=/usr/local/lib/openflux-deploy
+PATCH_DIR="${OPENFLUX_PATCH_DIR:-/usr/local/lib/openflux-deploy}"
 FORCE=0
 [ "${1:-}" = "--force" ] && FORCE=1
 

@@ -1107,6 +1107,16 @@ func (m *Manager) setAutoUpdate(value bool) error {
 	return nil
 }
 
+// serverUpdateScriptPath prefers the persistent writable tooling copy for
+// Docker deployments whose image filesystem is read-only.
+func (m *Manager) serverUpdateScriptPath() string {
+	persistent := filepath.Join(filepath.Dir(m.versionPath), "tooling", "update.sh")
+	if regularFile(persistent) {
+		return persistent
+	}
+	return m.updatePath
+}
+
 func (m *Manager) update() error {
 	m.mu.Lock()
 	if m.updating || m.updatingPanel {
@@ -1131,7 +1141,9 @@ func (m *Manager) update() error {
 		return err
 	}
 	go func() {
-		if err := refreshServerTooling(m.updatePath); err != nil {
+		toolingDir := filepath.Join(filepath.Dir(m.versionPath), "tooling")
+		scriptPath, err := refreshServerTooling(m.updatePath, toolingDir)
+		if err != nil {
 			fmt.Fprintln(logFile, "[panel] server fixes could not be installed:", err)
 			logFile.Close()
 			m.mu.Lock()
@@ -1140,8 +1152,9 @@ func (m *Manager) update() error {
 			m.mu.Unlock()
 			return
 		}
-		fmt.Fprintln(logFile, "[panel] server update tools refreshed")
-		cmd := exec.Command(m.updatePath, "--force")
+		fmt.Fprintln(logFile, "[panel] server update tools refreshed:", scriptPath)
+		cmd := exec.Command(scriptPath, "--force")
+		cmd.Env = append(os.Environ(), "OPENFLUX_PATCH_DIR="+filepath.Dir(scriptPath))
 		cmd.Stdout, cmd.Stderr = logFile, logFile
 		err := cmd.Run()
 		logFile.Close()
@@ -1182,27 +1195,40 @@ func (m *Manager) runPanelScript(argument, action string) error {
 		m.mu.Unlock()
 		return err
 	}
-	cmd := exec.Command(m.panelUpdatePath, argument)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("OPENFLUX_PANEL_PID=%d", os.Getpid()))
-	cmd.Stdout, cmd.Stderr = logFile, logFile
-	if err := cmd.Start(); err != nil {
-		logFile.Close()
-		m.mu.Lock()
-		m.updatingPanel = false
-		m.panelUpdateError = err.Error()
-		m.mu.Unlock()
-		return err
-	}
 	go func() {
-		err := cmd.Wait()
+		toolingDir := filepath.Join(filepath.Dir(m.panelRevisionPath), "tooling")
+		fmt.Fprintln(logFile, "[panel] refreshing the panel updater")
+		scriptPath, err := refreshPanelUpdateScript(m.panelUpdatePath, toolingDir)
+		if err != nil {
+			fmt.Fprintln(logFile, "[panel] updater could not be refreshed:", err)
+			logFile.Close()
+			m.mu.Lock()
+			m.panelUpdateError = fmt.Sprintf("%v: %s", err, strings.TrimSpace(tailFile(m.panelUpdateLogPath, 4096)))
+			m.updatingPanel = false
+			m.mu.Unlock()
+			return
+		}
+		cmd := exec.Command(scriptPath, argument)
+		cmd.Env = append(os.Environ(), fmt.Sprintf("OPENFLUX_PANEL_PID=%d", os.Getpid()))
+		cmd.Stdout, cmd.Stderr = logFile, logFile
+		if err := cmd.Start(); err != nil {
+			logFile.Close()
+			m.mu.Lock()
+			m.updatingPanel = false
+			m.panelUpdateError = err.Error()
+			m.mu.Unlock()
+			return
+		}
+		waitErr := cmd.Wait()
 		logFile.Close()
 		m.mu.Lock()
-		if err != nil {
-			m.panelUpdateError = err.Error()
+		if waitErr != nil {
+			m.panelUpdateError = fmt.Sprintf("%v: %s", waitErr, strings.TrimSpace(tailFile(m.panelUpdateLogPath, 4096)))
 		}
 		m.updatingPanel = false
 		m.mu.Unlock()
 	}()
+
 	return nil
 }
 
