@@ -78,9 +78,37 @@ func TestBoardConnectionArgs(t *testing.T) {
 func TestSingleNegotiatedConnectionArgs(t *testing.T) {
 	c := Connection{Config: Config{Transport: "mailru", URL: "https://cloud.mail.ru/public/example", Mode: "l4", Codec: "batched", Negotiate: true, EncryptionKeyFile: "/etc/openflux/secret.key"}}
 	args := strings.Join(connectionArgs(c), " ")
-	for _, want := range []string{"--transport=mailru", "--url=https://cloud.mail.ru/public/example", "--negotiate", "--encryption-key-file=/etc/openflux/secret.key"} {
+	for _, want := range []string{"--transport=mailru", "--url=https://cloud.mail.ru/public/example", "--negotiate", "--encryption-key-file=/etc/openflux/secret.key", "--cookie-store="} {
 		if !strings.Contains(args, want) { t.Fatalf("missing %q in %s", want, args) }
 	}
+}
+
+func TestYandexCookieStoreIsPersistentAndCaptchaStatus(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("OPENFLUX_STATE_DIR", dir)
+	c := Connection{ID: "yandex-test", Config: Config{Transport: "yandex", URL: "https://disk.yandex.ru/i/doc", Mode: "l4", Codec: "batched"}}
+	args := strings.Join(connectionArgs(c), " ")
+	if !strings.Contains(args, "--cookie-store="+cookieStorePath(c.ID)) { t.Fatalf("missing persistent cookie store: %s", args) }
+	m := &Manager{processes: map[string]*processState{c.ID: &processState{}}}
+	m.logLocked(c.ID, "[YDOCS] SmartCaptcha detected, external solver required")
+	if !m.processes[c.ID].yandexAuthRequired { t.Fatal("server CAPTCHA not surfaced") }
+	m.logLocked(c.ID, "[YDOCS] WebSocket connected to host")
+	if m.processes[c.ID].yandexAuthRequired { t.Fatal("server CAPTCHA not cleared on connection") }
+}
+
+func TestMigrateLegacyYandexCookies(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("OPENFLUX_STATE_DIR", filepath.Join(dir, "state"))
+	c := Connection{ID: "target", Config: Config{Transport: "yandex", URL: "https://disk.yandex.ru/i/target"}}
+	legacy := `{"https://disk.yandex.ru/i/target":{"session":"old"},"https://disk.yandex.ru/i/other":{"session":"other"}}`
+	if err := os.WriteFile("cookies-yandex.json", []byte(legacy), 0600); err != nil { t.Fatal(err) }
+	if err := migrateLegacyCookieStore(c); err != nil { t.Fatal(err) }
+	raw, err := os.ReadFile(cookieStorePath(c.ID))
+	if err != nil { t.Fatal(err) }
+	var jars map[string]map[string]string
+	if err := json.Unmarshal(raw, &jars); err != nil { t.Fatal(err) }
+	if jars[c.URL]["session"] != "old" || len(jars) != 1 { t.Fatalf("unexpected migrated cookie keys: %v", len(jars)) }
 }
 
 func TestAuthenticatedConnectionArgs(t *testing.T) {

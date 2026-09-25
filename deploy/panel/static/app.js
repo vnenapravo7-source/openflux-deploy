@@ -45,14 +45,17 @@ function drawChart(points){
 }
 
 function connectionCard(c){
-  const status=c.running?`Работает · ${duration(c.uptime)}`:c.enabled?`Не запущено${c.last_error?": "+c.last_error:""}`:"Выключено";
+  const soloYandexAuth=c.yandex_auth_required&&!c.transports?.length&&c.transport==="yandex";
+  const online=c.running&&!soloYandexAuth;
+  const status=soloYandexAuth?"Yandex ждёт проверку на сервере":c.running?`Работает · ${duration(c.uptime)}`:c.enabled?`Не запущено${c.last_error?": "+c.last_error:""}`:"Выключено";
   const links=c.transports||[],cups=c.transport==="cupsonline"||links.some(link=>link.type==="cupsonline");
   const code=cups?`<div class="client-code"><small>Код для клиента Cups.online (поле URL)</small>${c.client_code?`<code>${esc(c.client_code)}</code><button class="secondary small" data-connection-action="copy" data-id="${esc(c.id)}">Копировать код</button>`:`<span>Код появится здесь после запуска и создания комнат.</span>`}</div>`:"";
   const summary=links.length?links.map(link=>`${names[link.type]||link.type} ${link.priority}`).join(" → "):names[c.transport]||c.transport;
-  return `<div class="connection-card ${c.running?'running':''}">
-    <div class="connection-main"><div><strong>${esc(c.name)}</strong><small>${esc(summary)} · ${esc(c.mode.toUpperCase())} · ${esc(c.codec)}${links.length?" · защищённая сессия":""}${state.me.role==="admin"?` · ${esc(users.find(u=>u.id===c.owner_id)?.username||c.owner_id)}`:""}</small></div><span class="status ${c.running?'online':'offline'}"><i></i>${esc(status)}</span></div>
+  return `<div class="connection-card ${online?'running':''}">
+    <div class="connection-main"><div><strong>${esc(c.name)}</strong><small>${esc(summary)} · ${esc(c.mode.toUpperCase())} · ${esc(c.codec)}${links.length?" · защищённая сессия":""}${state.me.role==="admin"?` · ${esc(users.find(u=>u.id===c.owner_id)?.username||c.owner_id)}`:""}</small></div><span class="status ${online?'online':'offline'}"><i></i>${esc(status)}</span></div>
     ${links.length?`<div class="connection-url">${links.filter(link=>link.url).map(link=>`${esc(names[link.type]||link.type)}: ${esc(link.url)}`).join("<br>")}${c.direct_listen?`<br>Direct: ${esc(c.direct_listen)}`:""}</div>`:c.transport==="direct"?`<div class="connection-url">Direct: ${esc(c.direct_listen||"порт не назначен")}</div>`:c.transport!=="cupsonline"?`<div class="connection-url">${esc(c.url||"Ссылка не указана")}</div>`:""}
     ${c.session_context?`<div class="connection-url">Контекст шифрования: ${esc(c.session_context)}</div>`:""}
+    ${c.yandex_auth_required?`<div class="connection-url">Серверный Yandex получил SmartCaptcha и ещё не открыл документ. Проверка, пройденная на телефоне, сама по себе не подтверждает авторизацию exit-ноды.</div>`:""}
     ${c.negotiate&&!links.length?`<div class="connection-url">Протокол Session: на телефоне нужен режим Session с одним транспортом. Обычное одиночное подключение Android несовместимо — для него снимите галочку «Протокол Session» в настройках.</div>`:""}
     ${code}
     ${c.key_managed?`<div class="connection-key hidden"><small>Общий ключ — не передавайте посторонним</small><code></code></div>`:""}

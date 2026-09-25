@@ -59,6 +59,7 @@ type ConnectionView struct {
 	Connection
 	KeyManaged bool `json:"key_managed"`
 	SessionContext string `json:"session_context,omitempty"`
+	YandexAuthRequired bool `json:"yandex_auth_required,omitempty"`
 	Running    bool     `json:"running"`
 	PID        int      `json:"pid"`
 	Uptime     int64    `json:"uptime"`
@@ -103,6 +104,7 @@ type processState struct {
 	logs           []string
 	clientCode     string
 	expectCupsCode bool
+	yandexAuthRequired bool
 }
 
 type Manager struct {
@@ -372,6 +374,9 @@ func connectionArgs(c Connection) []string {
 		if c.URL != "" {
 			args = append(args, "--url="+c.URL)
 		}
+		if c.Transport != "direct" {
+			args = append(args, "--cookie-store="+cookieStorePath(c.ID))
+		}
 	} else {
 		if needsNamedConfig(c) {
 			args = append(args, "--config="+sessionConfigPath(c.ID))
@@ -427,6 +432,28 @@ func sessionContextURL(c Connection) string {
 
 func managedKeyPath(id string) string {
 	return filepath.Join(env("OPENFLUX_STATE_DIR", "/var/lib/openflux-deploy"), "keys", id+".key")
+}
+
+func cookieStorePath(id string) string {
+	return filepath.Join(env("OPENFLUX_STATE_DIR", "/var/lib/openflux-deploy"), "cookies-"+id+".json")
+}
+
+// Move an existing single-transport jar from the container working directory
+// into the persistent state volume without altering any other document's jar.
+func migrateLegacyCookieStore(c Connection) error {
+	if c.ID == "" || c.URL == "" || c.Transport == "direct" || len(c.Transports) != 0 { return nil }
+	path := cookieStorePath(c.ID)
+	if _, err := os.Stat(path); err == nil { return nil } else if !os.IsNotExist(err) { return err }
+	raw, err := os.ReadFile("cookies-"+c.Transport+".json")
+	if os.IsNotExist(err) { return nil }
+	if err != nil { return err }
+	var jars map[string]map[string]string
+	if err := json.Unmarshal(raw, &jars); err != nil { return err }
+	jar := jars[c.URL]
+	if len(jar) == 0 { return nil }
+	data, err := json.Marshal(map[string]map[string]string{c.URL: jar})
+	if err != nil { return err }
+	return writePrivateFile(path, data)
 }
 
 func sessionConfigPath(id string) string {
@@ -522,6 +549,9 @@ func (m *Manager) startLocked(id string) error {
 			return fmt.Errorf("this server binary does not support authenticated negotiation; update the server first")
 		}
 	}
+	if err := migrateLegacyCookieStore(c); err != nil {
+		m.logLocked(id, "[panel] cookie migration skipped: "+err.Error())
+	}
 	cmd := exec.Command(m.binaryPath, connectionArgs(c)...)
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -532,7 +562,7 @@ func (m *Manager) startLocked(id string) error {
 		return err
 	}
 	p.cmd, p.startedAt, p.lastError = cmd, time.Now(), ""
-	p.clientCode, p.expectCupsCode = "", false
+	p.clientCode, p.expectCupsCode, p.yandexAuthRequired = "", false, false
 	m.logLocked(id, fmt.Sprintf("[panel] started %s, pid=%d", c.Name, cmd.Process.Pid))
 	go m.capture(id, pipe)
 	go m.wait(id, cmd)
@@ -553,6 +583,11 @@ func (m *Manager) logLocked(id, line string) {
 	p := m.processes[id]
 	if p == nil {
 		return
+	}
+	if strings.Contains(line, "[YDOCS] SmartCaptcha detected") || strings.Contains(line, "[YDOCS] fetchDocInfo needs external help") {
+		p.yandexAuthRequired = true
+	} else if strings.Contains(line, "[YDOCS] WebSocket connected") {
+		p.yandexAuthRequired = false
 	}
 	if strings.Contains(line, "=== COPY THIS TO CLIENT ===") {
 		p.expectCupsCode = true
@@ -809,7 +844,7 @@ func (m *Manager) connectionViews(user User) []ConnectionView {
 		v := ConnectionView{Connection: c, Logs: []string{}, KeyManaged: c.EncryptionKeyFile != "" && c.EncryptionKeyFile == managedKeyPath(c.ID)}
 		if len(c.Transports) > 0 { v.SessionContext = sessionContextURL(c) }
 		if p := m.processes[c.ID]; p != nil {
-			v.Restarts, v.LastError, v.Logs, v.ClientCode = p.restarts, p.lastError, append([]string{}, p.logs...), p.clientCode
+			v.Restarts, v.LastError, v.Logs, v.ClientCode, v.YandexAuthRequired = p.restarts, p.lastError, append([]string{}, p.logs...), p.clientCode, p.yandexAuthRequired
 			if p.cmd != nil {
 				v.Running, v.PID, v.Uptime = true, p.cmd.Process.Pid, int64(time.Since(p.startedAt).Seconds())
 			}
