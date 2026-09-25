@@ -146,11 +146,16 @@
       </section>
       <section id="view-nodes" class="view admin-only">
         <article class="card"><div class="card-head"><div><h2>Подключённые серверы</h2><p>Статус и управление удалёнными OpenFlux-нодами</p></div><button id="showAddNode" class="primary small">+ Добавить ноду</button></div>
+          <aside class="node-install-guide">
+            <div class="node-guide-title"><span class="node-guide-icon">↗</span><div><b>Как добавить сервер</b><small>На втором VPS установите OpenFlux в режиме ноды. Установщик сам выберет Docker или systemd.</small></div></div>
+            <div class="node-install-command"><code id="nodeInstallCommand">sudo bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/deploy.sh)" -- --role node</code><button id="copyNodeInstallCommand" type="button" class="secondary small">Копировать</button></div>
+            <p>После установки скопируйте из консоли <b>URL</b>, <b>токен</b> и <b>SHA-256</b> сюда. Убедитесь, что порт панели ноды доступен с основного VPS. Токен никому не отправляйте.</p>
+          </aside>
           <form id="nodeForm" class="node-form hidden">
-            <label><span>Название</span><input id="nodeName" required placeholder="Амстердам 1"></label>
-            <label><span>HTTPS-адрес</span><input id="nodeUrl" required type="url" placeholder="https://203.0.113.10:8088"></label>
-            <label><span>Токен ноды</span><input id="nodeToken" required type="password" autocomplete="new-password"></label>
-            <label><span>SHA-256 сертификата <em>для self-signed</em></span><input id="nodeFingerprint" placeholder="64 шестнадцатеричных символа"></label>
+            <label><span>Название</span><input id="nodeName" required placeholder="Амстердам 1"><small>Любая подпись, чтобы различать серверы в списке.</small></label>
+            <label><span>HTTPS-адрес</span><input id="nodeUrl" required type="url" placeholder="https://203.0.113.10:8088"><small>URL из вывода установщика. Используйте публичный адрес и порт ноды.</small></label>
+            <label><span>Токен ноды</span><input id="nodeToken" required type="password" autocomplete="new-password"><small>Скопируйте строку «Токен» из вывода установщика. Храните в секрете.</small></label>
+            <label><span>SHA-256 сертификата <em>для self-signed</em></span><input id="nodeFingerprint" placeholder="64 шестнадцатеричных символа"><small>Отпечаток из вывода установщика, без двоеточий. Для self-signed сертификата обязателен.</small></label>
             <div class="node-form-actions"><button type="button" id="cancelNode" class="secondary">Отмена</button><button class="primary">Подключить</button></div>
           </form><div id="nodesList" class="nodes-list"><div class="empty">Подключённых нод пока нет.</div></div>
         </article>
