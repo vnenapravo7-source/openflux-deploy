@@ -43,6 +43,29 @@ sudo bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/o
 <tr><td><b>Инструкции</b></td><td>Редактируемые материалы: форматированный текст, фото, видео и файлы</td></tr>
 </table>
 
+## Скриншоты
+
+Интерфейс панели: обзор, подключения, быстрый мульти-профиль, настройки, инструкции, профиль пользователя и журнал.
+
+<table>
+<tr>
+<td align="center"><b>Обзор</b><br><img src="assets/screenshots/overview.svg" alt="Обзор панели" width="100%"></td>
+<td align="center"><b>Подключения и QR</b><br><img src="assets/screenshots/connections.svg" alt="Карточки подключений и QR-код" width="100%"></td>
+</tr>
+<tr>
+<td align="center"><b>Быстрое мульти-подключение</b><br><img src="assets/screenshots/quick-multi.svg" alt="Форма быстрого мульти-подключения" width="100%"></td>
+<td align="center"><b>Новое подключение</b><br><img src="assets/screenshots/new-connection.svg" alt="Форма создания подключения" width="100%"></td>
+</tr>
+<tr>
+<td align="center"><b>Инструкции</b><br><img src="assets/screenshots/instructions.svg" alt="Редактор инструкций" width="100%"></td>
+<td align="center"><b>Профиль</b><br><img src="assets/screenshots/profile.svg" alt="Настройки профиля" width="100%"></td>
+</tr>
+<tr>
+<td align="center"><b>Пользователи</b><br><img src="assets/screenshots/users.svg" alt="Управление пользователями" width="100%"></td>
+<td align="center"><b>Журнал</b><br><img src="assets/screenshots/logs.svg" alt="Журнал подключений" width="100%"></td>
+</tr>
+</table>
+
 ## Мобильные приложения
 
 - [Android-приложение](https://github.com/damnurmum/OpenFlux-Android) · [скачать последнюю версию](https://github.com/damnurmum/OpenFlux-Android/releases/latest)
