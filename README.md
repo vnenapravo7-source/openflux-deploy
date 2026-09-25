@@ -2,11 +2,15 @@
 
 # OpenFlux Deploy
 
-**OpenFlux-сервер и веб-панель для простого управления подключениями**
+### Сервер OpenFlux и панель управления — без ручной настройки
 
-Установка одной командой · Docker / systemd · пользователи · QR-профили · ноды
+Установка на VPS одной командой · Docker или systemd · управление подключениями и пользователями
 
-[Установка](#установка) · [Возможности](#возможности) · [Мобильные приложения](#мобильные-приложения) · [Проекты и лицензии](#проекты-и-лицензии)
+[**Установить**](#установка) · [Возможности](#возможности) · [Интерфейс](#интерфейс) · [Мобильные приложения](#мобильные-приложения)
+
+[![Лицензия панели](https://img.shields.io/badge/панель-GPL--3.0-42c99a?style=flat-square)](LICENSE)
+[![Android](https://img.shields.io/badge/Android-GPL--3.0-79c85b?style=flat-square)](https://github.com/damnurmum/OpenFlux-Android/blob/main/LICENSE)
+[![OpenFlux](https://img.shields.io/badge/OpenFlux-GPL--3.0-5b9ee8?style=flat-square)](https://github.com/p1neappleXpress/OpenFlux/blob/main/LICENSE)
 
 </div>
 
@@ -14,58 +18,63 @@
 
 ## Установка
 
-На VPS с правами root выполните:
+Выполните на VPS от имени root:
 
 ```bash
-sudo bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/deploy.sh)"
+bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/deploy.sh)"
 ```
 
-Установщик сам выберет Docker (если установлен Docker Compose) или systemd. При желании укажите режим явно:
+Установщик предложит Docker или systemd. Режим можно указать сразу:
 
 ```bash
 # systemd
-sudo bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/deploy.sh)" -- --mode systemd
+bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/deploy.sh)" -- --mode systemd
 
 # Docker
-sudo bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/deploy.sh)" -- --mode docker
+bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/deploy.sh)" -- --mode docker
 ```
 
-После установки сохраните адрес панели и данные входа, показанные в консоли.
+После установки сохраните адрес панели и учётные данные из консоли.
 
 ## Возможности
 
 <table>
-<tr><td><b>Транспорты</b></td><td>Yandex Docs, Volga, Board, Mail.ru Docs, Cups.online и Direct TCP</td></tr>
-<tr><td><b>Подключения</b></td><td>Одиночные и быстрый мульти-профиль; отдельные ключи, ссылки <code>openflux://</code> и QR-коды</td></tr>
-<tr><td><b>Пользователи</b></td><td>Роли, отдельные подключения и журналы, смена логина и пароля</td></tr>
-<tr><td><b>Наблюдение</b></td><td>Статус, журналы, трафик и удалённые серверы-ноды</td></tr>
-<tr><td><b>Обслуживание</b></td><td>Проверка и установка обновлений, автообновление и откат сервера и панели</td></tr>
-<tr><td><b>Инструкции</b></td><td>Редактируемые материалы: форматированный текст, фото, видео и файлы</td></tr>
+<tr>
+<td width="50%"><b>Подключения</b><br>Yandex Docs, Volga, Board, Mail.ru Docs, Cups.online и Direct TCP; отдельные и мульти-профили, QR и ссылки <code>openflux://</code>.</td>
+<td width="50%"><b>Панель</b><br>Пользователи и роли, журнал, статистика трафика, редактируемые инструкции с медиа.</td>
+</tr>
+<tr>
+<td><b>Обслуживание</b><br>Проверка обновлений, автообновление и откат панели и серверной части.</td>
+<td><b>Установка</b><br>Одна команда; Docker или systemd.</td>
+</tr>
 </table>
 
-## Скриншоты
+## Интерфейс
 
-Нажмите на изображение или «Открыть полный размер», чтобы посмотреть скриншот отдельно.
+Нажмите на скриншот, чтобы открыть полноразмерное изображение.
 
-> **Важно о нодах:** пока это только визуальная часть панели. Создание подключений на удалённых нодах и перенос между серверами ещё не реализованы.
+> **Ноды пока в демонстрационном режиме.** Сейчас это визуальная часть панели: создание подключений на удалённых серверах и перенос между ними ещё не реализованы.
 
 <table>
-<tr><td align="center"><b>Обзор</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/overview.jpg"><img src="assets/screenshots/overview.jpg" alt="Обзор панели" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/overview.jpg">Открыть полный размер ↗</a></sub></td><td align="center"><b>Подключения и QR</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/connections.jpg"><img src="assets/screenshots/connections.jpg" alt="Карточки подключений и QR-код" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/connections.jpg">Открыть полный размер ↗</a></sub></td></tr>
-<tr><td align="center"><b>Быстрое мульти-подключение</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/quick-multi.jpg"><img src="assets/screenshots/quick-multi.jpg" alt="Форма быстрого мульти-подключения" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/quick-multi.jpg">Открыть полный размер ↗</a></sub></td><td align="center"><b>Новое подключение</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/new-connection.jpg"><img src="assets/screenshots/new-connection.jpg" alt="Форма создания подключения" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/new-connection.jpg">Открыть полный размер ↗</a></sub></td></tr>
-<tr><td align="center"><b>Инструкции</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/instructions.jpg"><img src="assets/screenshots/instructions.jpg" alt="Редактор инструкций" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/instructions.jpg">Открыть полный размер ↗</a></sub></td><td align="center"><b>Профиль</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/profile.jpg"><img src="assets/screenshots/profile.jpg" alt="Настройки профиля" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/profile.jpg">Открыть полный размер ↗</a></sub></td></tr>
-<tr><td align="center"><b>Пользователи</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/users.jpg"><img src="assets/screenshots/users.jpg" alt="Управление пользователями" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/users.jpg">Открыть полный размер ↗</a></sub></td><td align="center"><b>Журнал</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/logs.jpg"><img src="assets/screenshots/logs.jpg" alt="Журнал подключений" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/logs.jpg">Открыть полный размер ↗</a></sub></td></tr>
-<tr><td align="center"><b>Ноды</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/nodes.jpg"><img src="assets/screenshots/nodes.jpg" alt="Экран раздела нод" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/nodes.jpg">Открыть полный размер ↗</a></sub></td></tr>
+<tr><td align="center" width="50%"><b>Обзор</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/overview.jpg"><img src="assets/screenshots/overview.jpg" alt="Обзор панели" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/overview.jpg">Открыть полный размер ↗</a></sub></td><td align="center" width="50%"><b>Подключения</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/connections.jpg"><img src="assets/screenshots/connections.jpg" alt="Подключения и QR-код" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/connections.jpg">Открыть полный размер ↗</a></sub></td></tr>
+<tr><td align="center" width="50%"><b>Мульти-профиль</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/quick-multi.jpg"><img src="assets/screenshots/quick-multi.jpg" alt="Быстрое мульти-подключение" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/quick-multi.jpg">Открыть полный размер ↗</a></sub></td><td align="center" width="50%"><b>Создание</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/new-connection.jpg"><img src="assets/screenshots/new-connection.jpg" alt="Создание подключения" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/new-connection.jpg">Открыть полный размер ↗</a></sub></td></tr>
+<tr><td align="center" width="50%"><b>Инструкции</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/instructions.jpg"><img src="assets/screenshots/instructions.jpg" alt="Редактор инструкций" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/instructions.jpg">Открыть полный размер ↗</a></sub></td><td align="center" width="50%"><b>Профиль</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/profile.jpg"><img src="assets/screenshots/profile.jpg" alt="Профиль пользователя" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/profile.jpg">Открыть полный размер ↗</a></sub></td></tr>
+<tr><td align="center" width="50%"><b>Пользователи</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/users.jpg"><img src="assets/screenshots/users.jpg" alt="Управление пользователями" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/users.jpg">Открыть полный размер ↗</a></sub></td><td align="center" width="50%"><b>Журнал</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/logs.jpg"><img src="assets/screenshots/logs.jpg" alt="Журнал подключений" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/logs.jpg">Открыть полный размер ↗</a></sub></td></tr>
+<tr><td align="center" width="50%"><b>Ноды</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/nodes.jpg"><img src="assets/screenshots/nodes.jpg" alt="Раздел нод" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/nodes.jpg">Открыть полный размер ↗</a></sub></td></tr>
 </table>
+
 
 ## Мобильные приложения
 
-- [Android-приложение](https://github.com/damnurmum/OpenFlux-Android) · [скачать последнюю версию](https://github.com/damnurmum/OpenFlux-Android/releases/latest)
-- [iOS TestFlight](https://testflight.apple.com/join/BwnAcdus)
+- [Android-приложение и релизы](https://github.com/damnurmum/OpenFlux-Android/releases/latest) · [репозиторий](https://github.com/damnurmum/OpenFlux-Android) · GPL-3.0
+- [iOS · TestFlight](https://testflight.apple.com/join/BwnAcdus)
 
 ## Проекты и лицензии
 
-- **Панель и установщик:** [vnenapravo7-source/openflux-deploy](https://github.com/vnenapravo7-source/openflux-deploy) · [GPL-3.0](LICENSE)
-- **Серверное ядро:** [p1neappleXpress/OpenFlux](https://github.com/p1neappleXpress/OpenFlux) · [GPL-3.0](https://github.com/p1neappleXpress/OpenFlux/blob/main/LICENSE)
-- **Android-клиент:** [damnurmum/OpenFlux-Android](https://github.com/damnurmum/OpenFlux-Android) · [GPL-3.0](https://github.com/damnurmum/OpenFlux-Android/blob/main/LICENSE)
+| Проект | Назначение | Лицензия |
+|---|---|---|
+| [openflux-deploy](https://github.com/vnenapravo7-source/openflux-deploy) | Эта панель и установщик | [GPL-3.0](LICENSE) |
+| [OpenFlux](https://github.com/p1neappleXpress/OpenFlux) | Серверное ядро | [GPL-3.0](https://github.com/p1neappleXpress/OpenFlux/blob/main/LICENSE) |
+| [OpenFlux-Android](https://github.com/damnurmum/OpenFlux-Android) | Android-клиент | [GPL-3.0](https://github.com/damnurmum/OpenFlux-Android/blob/main/LICENSE) |
 
-<sub>Ядро OpenFlux поддерживается авторами основного проекта. Здесь развиваются установщик и панель управления.</sub>
+<sub>Серверное ядро развивается авторами основного проекта. Здесь поддерживаются установщик и веб-панель.</sub>
