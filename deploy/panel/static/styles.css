@@ -38,3 +38,5 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .node-install-command{padding:8px 10px}
 .node-install-command code{font-size:10px;line-height:1.45}
 @media(min-width:900px){.node-install-guide{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);align-items:center}.node-install-guide>p{grid-column:1/-1}}
+
+.node-status-notice{margin:-4px 0 14px;padding:10px 13px;border:1px solid #57452e;border-radius:10px;background:#1b1812;color:#c9b99c;font-size:11px;line-height:1.5}.node-status-notice b{color:#f4c77b}
