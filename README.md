@@ -45,25 +45,16 @@ sudo bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/o
 
 ## Скриншоты
 
-Интерфейс панели: обзор, подключения, быстрый мульти-профиль, настройки, инструкции, профиль пользователя и журнал.
+Нажмите на изображение или «Открыть полный размер», чтобы посмотреть скриншот отдельно.
+
+> **Важно о нодах:** пока это только визуальная часть панели. Создание подключений на удалённых нодах и перенос между серверами ещё не реализованы.
 
 <table>
-<tr>
-<td align="center"><b>Обзор</b><br><img src="assets/screenshots/overview.svg" alt="Обзор панели" width="100%"></td>
-<td align="center"><b>Подключения и QR</b><br><img src="assets/screenshots/connections.svg" alt="Карточки подключений и QR-код" width="100%"></td>
-</tr>
-<tr>
-<td align="center"><b>Быстрое мульти-подключение</b><br><img src="assets/screenshots/quick-multi.svg" alt="Форма быстрого мульти-подключения" width="100%"></td>
-<td align="center"><b>Новое подключение</b><br><img src="assets/screenshots/new-connection.svg" alt="Форма создания подключения" width="100%"></td>
-</tr>
-<tr>
-<td align="center"><b>Инструкции</b><br><img src="assets/screenshots/instructions.svg" alt="Редактор инструкций" width="100%"></td>
-<td align="center"><b>Профиль</b><br><img src="assets/screenshots/profile.svg" alt="Настройки профиля" width="100%"></td>
-</tr>
-<tr>
-<td align="center"><b>Пользователи</b><br><img src="assets/screenshots/users.svg" alt="Управление пользователями" width="100%"></td>
-<td align="center"><b>Журнал</b><br><img src="assets/screenshots/logs.svg" alt="Журнал подключений" width="100%"></td>
-</tr>
+<tr><td align="center"><b>Обзор</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/overview.jpg"><img src="assets/screenshots/overview.jpg" alt="Обзор панели" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/overview.jpg">Открыть полный размер ↗</a></sub></td><td align="center"><b>Подключения и QR</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/connections.jpg"><img src="assets/screenshots/connections.jpg" alt="Карточки подключений и QR-код" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/connections.jpg">Открыть полный размер ↗</a></sub></td></tr>
+<tr><td align="center"><b>Быстрое мульти-подключение</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/quick-multi.jpg"><img src="assets/screenshots/quick-multi.jpg" alt="Форма быстрого мульти-подключения" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/quick-multi.jpg">Открыть полный размер ↗</a></sub></td><td align="center"><b>Новое подключение</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/new-connection.jpg"><img src="assets/screenshots/new-connection.jpg" alt="Форма создания подключения" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/new-connection.jpg">Открыть полный размер ↗</a></sub></td></tr>
+<tr><td align="center"><b>Инструкции</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/instructions.jpg"><img src="assets/screenshots/instructions.jpg" alt="Редактор инструкций" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/instructions.jpg">Открыть полный размер ↗</a></sub></td><td align="center"><b>Профиль</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/profile.jpg"><img src="assets/screenshots/profile.jpg" alt="Настройки профиля" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/profile.jpg">Открыть полный размер ↗</a></sub></td></tr>
+<tr><td align="center"><b>Пользователи</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/users.jpg"><img src="assets/screenshots/users.jpg" alt="Управление пользователями" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/users.jpg">Открыть полный размер ↗</a></sub></td><td align="center"><b>Журнал</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/logs.jpg"><img src="assets/screenshots/logs.jpg" alt="Журнал подключений" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/logs.jpg">Открыть полный размер ↗</a></sub></td></tr>
+<tr><td align="center"><b>Ноды</b><br><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/nodes.jpg"><img src="assets/screenshots/nodes.jpg" alt="Экран раздела нод" width="100%"></a><br><sub><a href="https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/assets/screenshots/nodes.jpg">Открыть полный размер ↗</a></sub></td></tr>
 </table>
 
 ## Мобильные приложения
