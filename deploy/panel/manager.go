@@ -159,8 +159,11 @@ func validateConfig(c Config) error {
 		if c.SessionContextURL != "" {
 			return fmt.Errorf("session context URL requires a protected session")
 		}
-		if c.Negotiate && c.Codec != "batched" {
+			if c.Negotiate && c.Codec != "batched" {
 			return fmt.Errorf("negotiation requires batched codec")
+		}
+		if c.Transport == "cupsonline" && c.Negotiate {
+			return fmt.Errorf("single-transport Cups.online must not use --negotiate; use a protected multi-transport session only with a Session-capable client")
 		}
 		if c.DirectListen != "" || c.MaxPacketSize != 0 {
 			if c.Transport != "direct" || c.MaxPacketSize != 0 {
@@ -231,8 +234,15 @@ func validateConfig(c Config) error {
 }
 
 func validateTransportURL(kind, value string, enabled bool) error {
-	if !enabled || kind == "cupsonline" && value == "" {
+	if !enabled {
 		return nil
+	}
+	if kind == "cupsonline" {
+		value = strings.TrimSpace(value)
+		if value == "" || validCupsCode(value) {
+			return nil
+		}
+		return fmt.Errorf("Cups.online requires a base64 room code from the exit node")
 	}
 	if strings.TrimSpace(value) == "" {
 		return fmt.Errorf("document URL is required for %s", kind)
@@ -671,7 +681,7 @@ func (m *Manager) startLocked(id string) error {
 		return err
 	}
 	p.cmd, p.startedAt, p.lastError = cmd, time.Now(), ""
-	p.clientCode, p.expectCupsCode, p.yandexAuthRequired = "", false, false
+	p.clientCode, p.expectCupsCode, p.yandexAuthRequired = configuredCupsCode(c.Config), false, false
 	m.logLocked(id, fmt.Sprintf("[panel] started %s, pid=%d", c.Name, cmd.Process.Pid))
 	go m.capture(id, pipe)
 	go m.wait(id, cmd)
@@ -706,6 +716,10 @@ func (m *Manager) logLocked(id, line string) {
 		} else if validCupsCode(candidate) {
 			p.clientCode = candidate
 			p.expectCupsCode = false
+			if err := m.persistCupsCodeLocked(id, candidate); err != nil {
+				p.lastError = "failed to persist Cups.online room code: " + err.Error()
+				p.logs = append(p.logs, time.Now().Format("15:04:05")+"  [panel] WARNING: Cups room code is not saved; restarting may create new rooms")
+			}
 		} else {
 			p.expectCupsCode = false
 		}
@@ -734,6 +748,54 @@ func validCupsCode(value string) bool {
 		}
 	}
 	return true
+}
+
+func configuredCupsCode(c Config) string {
+	if len(c.Transports) == 0 {
+		if c.Transport == "cupsonline" && validCupsCode(c.URL) {
+			return c.URL
+		}
+		return ""
+	}
+	for _, link := range c.Transports {
+		if link.Type == "cupsonline" && validCupsCode(link.URL) {
+			return link.URL
+		}
+	}
+	return ""
+}
+
+// persistCupsCodeLocked remembers the room IDs printed by OpenFlux, so normal
+// restarts rejoin those rooms instead of creating new ones. Caller holds m.mu.
+func (m *Manager) persistCupsCodeLocked(id, code string) error {
+	if !validCupsCode(code) {
+		return fmt.Errorf("invalid Cups room code")
+	}
+	for i := range m.connections {
+		c := &m.connections[i]
+		if c.ID != id {
+			continue
+		}
+		changed := false
+		if len(c.Transports) == 0 && c.Transport == "cupsonline" {
+			if c.URL != code {
+				c.URL, changed = code, true
+			}
+		} else {
+			for j := range c.Transports {
+				link := &c.Transports[j]
+				if link.Type == "cupsonline" && link.URL != code {
+					link.URL, changed = code, true
+					break
+				}
+			}
+		}
+		if !changed {
+			return nil
+		}
+		return writeJSONFile(m.connectionsPath, m.connections)
+	}
+	return os.ErrNotExist
 }
 
 func (m *Manager) wait(id string, cmd *exec.Cmd) {
