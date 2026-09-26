@@ -40,6 +40,7 @@ jobs:
           bash -n deploy/update.sh
           bash -n deploy/panel-update.sh
           bash -n deploy/entrypoint.sh
+          bash -n uninstall.sh
 
   docker:
     runs-on: ubuntu-latest
