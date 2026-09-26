@@ -102,9 +102,10 @@ type processState struct {
 	restarts           int
 	lastError          string
 	logs               []string
-	clientCode         string
-	expectCupsCode     bool
-	yandexAuthRequired bool
+	clientCode           string
+	expectCupsCode       bool
+	cupsRestartScheduled bool
+	yandexAuthRequired   bool
 }
 
 type Manager struct {
@@ -679,6 +680,7 @@ func (m *Manager) startLocked(id string) error {
 	}
 	p.cmd, p.startedAt, p.lastError = cmd, time.Now(), ""
 	p.clientCode, p.expectCupsCode, p.yandexAuthRequired = configuredCupsCode(c.Config), false, false
+	p.cupsRestartScheduled = false
 	m.logLocked(id, fmt.Sprintf("[panel] started %s, pid=%d", c.Name, cmd.Process.Pid))
 	go m.capture(id, pipe)
 	go m.wait(id, cmd)
@@ -713,9 +715,15 @@ func (m *Manager) logLocked(id, line string) {
 		} else if validCupsCode(candidate) {
 			p.clientCode = candidate
 			p.expectCupsCode = false
+			freshRooms := m.freshSingleCupsLocked(id)
 			if err := m.persistCupsCodeLocked(id, candidate); err != nil {
 				p.lastError = "failed to persist Cups.online room code: " + err.Error()
 				p.logs = append(p.logs, time.Now().Format("15:04:05")+"  [panel] WARNING: Cups room code is not saved; restarting may create new rooms")
+			} else if freshRooms && !p.cupsRestartScheduled {
+				// The upstream first-start path creates rooms without --url. Rejoining
+				// the just-saved room code is the stable path used on subsequent starts.
+				p.cupsRestartScheduled = true
+				go m.restartFreshCups(id, p.cmd)
 			}
 		} else {
 			p.expectCupsCode = false
@@ -745,6 +753,35 @@ func validCupsCode(value string) bool {
 		}
 	}
 	return true
+}
+
+// freshSingleCupsLocked reports the first launch of a standalone Cups
+// connection: upstream created its room code without a --url argument.
+func (m *Manager) freshSingleCupsLocked(id string) bool {
+	i, ok := m.findLocked(id)
+	if !ok {
+		return false
+	}
+	c := m.connections[i]
+	return len(c.Transports) == 0 && c.Transport == "cupsonline" && strings.TrimSpace(c.URL) == ""
+}
+
+// restartFreshCups switches the first Cups launch to its persisted room code.
+// The command identity check prevents an automatic restart from touching a
+// process that the user has already changed or restarted.
+func (m *Manager) restartFreshCups(id string, initial *exec.Cmd) {
+	time.Sleep(time.Second)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	i, ok := m.findLocked(id)
+	p := m.processes[id]
+	if !ok || p == nil || p.cmd != initial || !p.cupsRestartScheduled || !m.connections[i].Enabled || m.connections[i].Transport != "cupsonline" || !validCupsCode(m.connections[i].URL) {
+		return
+	}
+	m.logLocked(id, "[panel] Cups.online: комнаты сохранены; перезапускаю подключение с этим же кодом")
+	if err := m.restartLocked(id); err != nil {
+		p.lastError = "failed to restart Cups.online with saved room code: " + err.Error()
+	}
 }
 
 func configuredCupsCode(c Config) string {
