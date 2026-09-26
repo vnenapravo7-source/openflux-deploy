@@ -41,7 +41,7 @@ bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openfl
 Удалятор определит установку Docker/systemd и остановит панель вместе с запущенными через неё процессами OpenFlux. По умолчанию конфигурация и данные сохраняются.
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/uninstall.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/uninstall.sh | sudo bash -s -- --yes
 ```
 
 Чтобы удалить также пользователей, настройки, ключи, сертификаты, журналы и резервные копии:
@@ -50,7 +50,7 @@ wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/m
 wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/uninstall.sh | sudo bash -s -- --purge-data --yes
 ```
 
-Первая команда попросит подтвердить удаление и сохранит данные. Вторая команда с `--purge-data --yes` удалит данные без дополнительного вопроса. Перед запуском убедитесь, что выбрали нужный VPS. Правила системного firewall и установленные Docker/Go пакеты удалятор не меняет. Если удаляете ноду, запускайте команду именно на VPS этой ноды.
+Первая команда сразу удалит панель и управляемые процессы, сохранив конфигурацию и данные. Вторая команда с `--purge-data --yes` дополнительно удалит их. Обе команды запускаются без запроса подтверждения. Перед запуском убедитесь, что выбрали нужный VPS. Правила системного firewall и установленные Docker/Go пакеты удалятор не меняет. Если удаляете ноду, запускайте команду именно на VPS этой ноды.
 
 ## Возможности
 
