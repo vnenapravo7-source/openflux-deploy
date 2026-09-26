@@ -97,11 +97,11 @@ type NodeView struct {
 }
 
 type processState struct {
-	cmd                *exec.Cmd
-	startedAt          time.Time
-	restarts           int
-	lastError          string
-	logs               []string
+	cmd                  *exec.Cmd
+	startedAt            time.Time
+	restarts             int
+	lastError            string
+	logs                 []string
 	clientCode           string
 	expectCupsCode       bool
 	cupsRestartScheduled bool
