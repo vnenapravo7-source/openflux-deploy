@@ -68,6 +68,15 @@ func TestShareSingleAndCups(t *testing.T) {
 	if spec.Negotiate || spec.Context != c.URL || spec.Transports[0].URL != c.URL {
 		t.Fatalf("incorrect legacy share: %+v", spec)
 	}
+	c.Transport, c.URL, c.Negotiate = "cupsonline", "", true
+	compatible, err := buildShareConfig(c, "room-code", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compatible.Negotiate {
+		t.Fatal("standalone Cups share must not request Session negotiation")
+	}
+	c.Negotiate = false
 	c.Transport, c.URL = "cupsonline", ""
 	if _, err := buildShareConfig(c, "", "", ""); err == nil {
 		t.Fatal("missing room code accepted")
