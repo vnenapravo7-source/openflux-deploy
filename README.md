@@ -47,7 +47,7 @@ wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/m
 Чтобы удалить также пользователей, настройки, ключи, сертификаты, журналы и резервные копии:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/uninstall.sh | sudo bash -s -- --purge-data
+wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/uninstall.sh | sudo bash -s -- --purge-data --yes
 ```
 
 Удалятор попросит подтверждение. Для автоматического запуска добавьте `--yes` после `--purge-data`. Правила системного firewall и установленные Docker/Go пакеты он не меняет. Если удаляете ноду, запускайте команду именно на VPS этой ноды.
