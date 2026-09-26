@@ -57,7 +57,7 @@ func buildShareConfig(c Connection, cupsCode, secret, host string) (shareConfig,
 	if secret != "" && len(secret) < 16 {
 		return shareConfig{}, fmt.Errorf("the encryption key is shorter than OpenFlux share v1 permits")
 	}
-	negotiated := c.Negotiate || len(c.Transports) > 0
+	negotiated := len(c.Transports) > 0 || c.Negotiate && c.Transport != "cupsonline"
 	if negotiated && secret == "" {
 		return shareConfig{}, fmt.Errorf("a Session link needs the connection's encryption key")
 	}
