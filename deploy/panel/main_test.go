@@ -41,7 +41,7 @@ func TestValidateConfig(t *testing.T) {
 		{"cups no url", Config{Enabled: true, Transport: "cupsonline", Mode: "l4", Codec: "legacy"}, true},
 		{"cups saved room code", Config{Enabled: true, Transport: "cupsonline", URL: testCupsRoomCode(t), Mode: "l4", Codec: "batched"}, true},
 		{"cups rejects public page URL", Config{Enabled: true, Transport: "cupsonline", URL: "https://interview.cups.online/live-coding/", Mode: "l4", Codec: "batched"}, false},
-		{"single cups cannot negotiate", Config{Enabled: true, Transport: "cupsonline", URL: testCupsRoomCode(t), Mode: "l4", Codec: "batched", Negotiate: true}, false},
+		{"single cups negotiation is ignored for compatibility", Config{Enabled: true, Transport: "cupsonline", URL: testCupsRoomCode(t), Mode: "l4", Codec: "batched", Negotiate: true}, true},
 		{"bad scheme", Config{Enabled: true, Transport: "mailru", URL: "file:///etc/passwd", Mode: "l3", Codec: "batched"}, false},
 		{"unknown transport", Config{Transport: "other", Mode: "l3", Codec: "batched"}, false},
 		{"authenticated session", Config{Enabled: true, Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/etc/openflux-deploy/key", Transports: []TransportLink{{Type: "yandex", URL: "https://docs.yandex.ru/example", Priority: 50}, {Type: "direct", Priority: 100}}, DirectListen: ":39000", MaxPacketSize: 1500}, true},
@@ -345,7 +345,7 @@ func TestCupsRoomCodeIsPersistedAndReusedAfterRestart(t *testing.T) {
 	m := &Manager{
 		connectionsPath: filepath.Join(dir, "connections.json"),
 		connections: []Connection{{ID: id, OwnerID: "owner", Name: "Cups", Config: Config{
-			Enabled: true, Transport: "cupsonline", Mode: "l4", Codec: "batched",
+			Enabled: true, Transport: "cupsonline", Mode: "l4", Codec: "batched", Negotiate: true,
 		}}},
 		processes: map[string]*processState{id: {}},
 	}
