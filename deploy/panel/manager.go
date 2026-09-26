@@ -162,9 +162,6 @@ func validateConfig(c Config) error {
 			if c.Negotiate && c.Codec != "batched" {
 			return fmt.Errorf("negotiation requires batched codec")
 		}
-		if c.Transport == "cupsonline" && c.Negotiate {
-			return fmt.Errorf("single-transport Cups.online must not use --negotiate; use a protected multi-transport session only with a Session-capable client")
-		}
 		if c.DirectListen != "" || c.MaxPacketSize != 0 {
 			if c.Transport != "direct" || c.MaxPacketSize != 0 {
 				return fmt.Errorf("session settings require at least one transport")
@@ -399,7 +396,7 @@ func connectionArgs(c Connection) []string {
 	args := []string{"--role=exit", "--mode=" + c.Mode, "--codec=" + c.Codec}
 	if len(c.Transports) == 0 {
 		args = append(args, "--transport="+c.Transport)
-		if c.Negotiate {
+		if c.Negotiate && c.Transport != "cupsonline" {
 			args = append(args, "--negotiate")
 		}
 		if c.Transport == "direct" {
