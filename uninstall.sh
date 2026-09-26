@@ -54,7 +54,10 @@ fi
 say "Правила системного firewall и установленные Docker/Go пакеты не меняются."
 
 if [ "$YES" -ne 1 ]; then
-  read -r -p "Продолжить удаление? [y/N] " answer
+  if [ ! -r /dev/tty ]; then
+    fail "нет интерактивного терминала для подтверждения; проверьте цель и повторите с --yes"
+  fi
+  if ! read -r -p "Продолжить удаление? [y/N] " answer </dev/tty; then answer=""; fi
   case "$answer" in y|Y|yes|YES) ;; *) say "Отменено."; exit 0 ;; esac
 fi
 
