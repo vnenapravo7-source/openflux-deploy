@@ -14,6 +14,15 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+func testCupsRoomCode(t *testing.T) string {
+	t.Helper()
+	raw, err := json.Marshal([]string{"00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw)
+}
+
 func TestValidateConfig(t *testing.T) {
 	cases := []struct {
 		name string
@@ -30,6 +39,9 @@ func TestValidateConfig(t *testing.T) {
 		{"board wrong host", Config{Enabled: true, Transport: "boards", URL: "https://example.com/guest/?hash=example", Mode: "l4", Codec: "batched"}, false},
 		{"board insecure url", Config{Enabled: true, Transport: "boards", URL: "http://boards.yandex.ru/guest/?hash=example", Mode: "l4", Codec: "batched"}, false},
 		{"cups no url", Config{Enabled: true, Transport: "cupsonline", Mode: "l4", Codec: "legacy"}, true},
+		{"cups saved room code", Config{Enabled: true, Transport: "cupsonline", URL: testCupsRoomCode(t), Mode: "l4", Codec: "batched"}, true},
+		{"cups rejects public page URL", Config{Enabled: true, Transport: "cupsonline", URL: "https://interview.cups.online/live-coding/", Mode: "l4", Codec: "batched"}, false},
+		{"single cups cannot negotiate", Config{Enabled: true, Transport: "cupsonline", URL: testCupsRoomCode(t), Mode: "l4", Codec: "batched", Negotiate: true}, false},
 		{"bad scheme", Config{Enabled: true, Transport: "mailru", URL: "file:///etc/passwd", Mode: "l3", Codec: "batched"}, false},
 		{"unknown transport", Config{Transport: "other", Mode: "l3", Codec: "batched"}, false},
 		{"authenticated session", Config{Enabled: true, Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/etc/openflux-deploy/key", Transports: []TransportLink{{Type: "yandex", URL: "https://docs.yandex.ru/example", Priority: 50}, {Type: "direct", Priority: 100}}, DirectListen: ":39000", MaxPacketSize: 1500}, true},
@@ -323,6 +335,45 @@ func TestUsersBootstrapAndPasswordHash(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "long-test-password") {
 		t.Fatal("plaintext password was persisted")
+	}
+}
+
+func TestCupsRoomCodeIsPersistedAndReusedAfterRestart(t *testing.T) {
+	dir := t.TempDir()
+	id := "cups-connection"
+	code := testCupsRoomCode(t)
+	m := &Manager{
+		connectionsPath: filepath.Join(dir, "connections.json"),
+		connections: []Connection{{ID: id, OwnerID: "owner", Name: "Cups", Config: Config{
+			Enabled: true, Transport: "cupsonline", Mode: "l4", Codec: "batched",
+		}}},
+		processes: map[string]*processState{id: {}},
+	}
+	m.logLocked(id, "=== COPY THIS TO CLIENT ===")
+	m.logLocked(id, code)
+	if got := m.connections[0].URL; got != code {
+		t.Fatalf("saved Cups room code = %q, want generated code", got)
+	}
+	raw, err := os.ReadFile(m.connectionsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved []Connection
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if len(saved) != 1 || saved[0].URL != code {
+		t.Fatalf("persisted config did not retain Cups room code: %+v", saved)
+	}
+	args := strings.Join(connectionArgs(saved[0]), " ")
+	if !strings.Contains(args, "--transport=cupsonline") || !strings.Contains(args, "--url="+code) {
+		t.Fatalf("restart would not rejoin saved Cups rooms: %s", args)
+	}
+	if strings.Contains(args, "--negotiate") {
+		t.Fatalf("single Cups connection must not use --negotiate: %s", args)
+	}
+	if got := configuredCupsCode(saved[0].Config); got != code {
+		t.Fatalf("room code shown after restart = %q, want saved code", got)
 	}
 }
 
