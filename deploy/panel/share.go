@@ -5,9 +5,11 @@ import (
 	"compress/flate"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"regexp"
 	"strings"
 
@@ -36,6 +38,18 @@ type shareResult struct {
 	Link string `json:"link"`
 	QR   string `json:"qr"`
 }
+
+// coreShareResult is the stable JSON reply from OpenFlux --make-link.
+// The core owns the link format so every official client exports identical
+// profiles. The panel only turns the returned link into a PNG QR code.
+type coreShareResult struct {
+	Link  string `json:"link"`
+	Error string `json:"error"`
+	Code  string `json:"code"`
+	Param string `json:"param"`
+}
+
+var errCoreMakeLinkUnavailable = errors.New("the installed OpenFlux core does not support --make-link")
 
 var shareDNSName = regexp.MustCompile(`(?i)^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$`)
 
@@ -146,21 +160,51 @@ func encodeShare(c shareConfig) (shareResult, error) {
 	return shareResult{Link: link, QR: "data:image/png;base64," + base64.StdEncoding.EncodeToString(qr)}, nil
 }
 
+func encodeShareWithCore(binary string, c shareConfig) (shareResult, error) {
+	raw, err := json.Marshal(c)
+	if err != nil {
+		return shareResult{}, err
+	}
+	cmd := exec.Command(binary, "--make-link", "-")
+	cmd.Stdin = bytes.NewReader(raw)
+	output, runErr := cmd.CombinedOutput()
+	var result coreShareResult
+	if err := json.Unmarshal(bytes.TrimSpace(output), &result); err != nil {
+		if runErr != nil {
+			return shareResult{}, errCoreMakeLinkUnavailable
+		}
+		return shareResult{}, fmt.Errorf("OpenFlux --make-link returned invalid JSON: %w", err)
+	}
+	if result.Error != "" {
+		return shareResult{}, fmt.Errorf("OpenFlux could not create the link: %s", result.Error)
+	}
+	if runErr != nil || result.Link == "" {
+		return shareResult{}, errCoreMakeLinkUnavailable
+	}
+	qr, err := qrcode.Encode(result.Link, qrcode.Medium, 512)
+	if err != nil {
+		return shareResult{}, err
+	}
+	return shareResult{Link: result.Link, QR: "data:image/png;base64," + base64.StdEncoding.EncodeToString(qr)}, nil
+}
+
 func (m *Manager) connectionShare(id, host string) (shareResult, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	i, ok := m.findLocked(id)
 	if !ok {
+		m.mu.Unlock()
 		return shareResult{}, os.ErrNotExist
 	}
 	c := m.connections[i]
 	secret := ""
 	if c.EncryptionKeyFile != "" {
 		if c.EncryptionKeyFile != managedKeyPath(id) {
+			m.mu.Unlock()
 			return shareResult{}, fmt.Errorf("this key is outside the panel; use a panel-managed key to generate a link")
 		}
 		raw, err := os.ReadFile(c.EncryptionKeyFile)
 		if err != nil {
+			m.mu.Unlock()
 			return shareResult{}, err
 		}
 		secret = strings.TrimSpace(string(raw))
@@ -169,9 +213,24 @@ func (m *Manager) connectionShare(id, host string) (shareResult, error) {
 	if p := m.processes[id]; p != nil {
 		cupsCode = p.clientCode
 	}
+	binary := m.binaryPath
+	m.mu.Unlock()
 	spec, err := buildShareConfig(c, cupsCode, secret, host)
 	if err != nil {
 		return shareResult{}, err
 	}
+	if binary != "" {
+		result, err := encodeShareWithCore(binary, spec)
+		if err == nil {
+			return result, nil
+		}
+		if !errors.Is(err, errCoreMakeLinkUnavailable) {
+			return shareResult{}, err
+		}
+	}
+	// Older cores do not know --make-link. Preserve QR creation until the
+	// administrator applies the server update; every current core uses the
+	// canonical path above.
 	return encodeShare(spec)
 }
+
