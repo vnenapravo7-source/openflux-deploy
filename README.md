@@ -9,7 +9,7 @@
 [**Установить**](#установка) · [Возможности](#возможности) · [Интерфейс](#интерфейс) · [Мобильные приложения](#мобильные-приложения)
 
 [![Лицензия панели](https://img.shields.io/badge/панель-GPL--3.0-42c99a?style=flat-square)](LICENSE)
-[![Android](https://img.shields.io/badge/Android-GPL--3.0-79c85b?style=flat-square)](https://github.com/damnurmum/OpenFlux-Android/blob/main/LICENSE)
+[![Android](https://img.shields.io/badge/Android-GPL--3.0-79c85b?style=flat-square)](https://github.com/p1neappleXpress/OpenFluxAndroid/blob/main/LICENSE)
 [![OpenFlux](https://img.shields.io/badge/OpenFlux-GPL--3.0-5b9ee8?style=flat-square)](https://github.com/p1neappleXpress/OpenFlux/blob/main/LICENSE)
 
 </div>
@@ -56,7 +56,7 @@ wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/m
 
 <table>
 <tr>
-<td width="50%"><b>Подключения</b><br>Yandex Docs, Volga, Board, Mail.ru Docs, Cups.online и Direct TCP; отдельные и мульти-профили, QR и ссылки <code>openflux://</code>.</td>
+<td width="50%"><b>Подключения</b><br>Yandex Docs, Volga, Board, Telemost, Mail.ru Docs, Cups.online и Direct TCP; отдельные и мульти-профили, QR и ссылки <code>openflux://</code>.</td>
 <td width="50%"><b>Панель</b><br>Пользователи и роли, журнал, статистика трафика, редактируемые инструкции с медиа.</td>
 </tr>
 <tr>
@@ -82,7 +82,7 @@ wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/m
 
 ## Мобильные приложения
 
-- [Android-приложение и релизы](https://github.com/damnurmum/OpenFlux-Android/releases/latest) · [репозиторий](https://github.com/damnurmum/OpenFlux-Android) · GPL-3.0
+- [Android-приложение и релизы](https://github.com/p1neappleXpress/OpenFluxAndroid/releases/latest) · [репозиторий](https://github.com/p1neappleXpress/OpenFluxAndroid) · GPL-3.0
 - [iOS · TestFlight](https://testflight.apple.com/join/BwnAcdus)
 
 ## Проекты и лицензии
@@ -91,6 +91,6 @@ wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/m
 |---|---|---|
 | [openflux-deploy](https://github.com/vnenapravo7-source/openflux-deploy) | Эта панель и установщик | [GPL-3.0](LICENSE) |
 | [OpenFlux](https://github.com/p1neappleXpress/OpenFlux) | Серверное ядро | [GPL-3.0](https://github.com/p1neappleXpress/OpenFlux/blob/main/LICENSE) |
-| [OpenFlux-Android](https://github.com/damnurmum/OpenFlux-Android) | Android-клиент | [GPL-3.0](https://github.com/damnurmum/OpenFlux-Android/blob/main/LICENSE) |
+| [OpenFluxAndroid](https://github.com/p1neappleXpress/OpenFluxAndroid) | Android-клиент | [GPL-3.0](https://github.com/p1neappleXpress/OpenFluxAndroid/blob/main/LICENSE) |
 
 <sub>Серверное ядро развивается авторами основного проекта. Здесь поддерживаются установщик и веб-панель.</sub>

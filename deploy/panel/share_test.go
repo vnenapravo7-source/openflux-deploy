@@ -90,6 +90,17 @@ func TestShareSingleAndCups(t *testing.T) {
 	}
 }
 
+func TestShareTelemost(t *testing.T) {
+	c := Connection{Name: "Telemost", Config: Config{Transport: "telemost", URL: "https://telemost.yandex.ru/j/88936358186517", Codec: "batched"}}
+	spec, err := buildShareConfig(c, "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Transports[0].Type != "telemost" || spec.Transports[0].URL != c.URL {
+		t.Fatalf("incorrect Telemost share: %+v", spec)
+	}
+}
+
 func TestShareRejectsExternalKeyAndInvalidDirectHost(t *testing.T) {
 	c := Connection{ID: "share-test", Name: "direct", Config: Config{Transport: "direct", Codec: "batched", Negotiate: true, DirectListen: ":39000", EncryptionKeyFile: "/etc/other-secret"}}
 	m := &Manager{connections: []Connection{c}}

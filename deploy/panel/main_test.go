@@ -38,6 +38,8 @@ func TestValidateConfig(t *testing.T) {
 		{"board missing hash", Config{Enabled: true, Transport: "boards", URL: "https://boards.yandex.ru/guest/", Mode: "l4", Codec: "batched"}, false},
 		{"board wrong host", Config{Enabled: true, Transport: "boards", URL: "https://example.com/guest/?hash=example", Mode: "l4", Codec: "batched"}, false},
 		{"board insecure url", Config{Enabled: true, Transport: "boards", URL: "http://boards.yandex.ru/guest/?hash=example", Mode: "l4", Codec: "batched"}, false},
+		{"telemost conference", Config{Enabled: true, Transport: "telemost", URL: "https://telemost.yandex.ru/j/88936358186517", Mode: "l4", Codec: "batched"}, true},
+		{"telemost wrong host", Config{Enabled: true, Transport: "telemost", URL: "https://example.com/j/88936358186517", Mode: "l4", Codec: "batched"}, false},
 		{"cups no url", Config{Enabled: true, Transport: "cupsonline", Mode: "l4", Codec: "legacy"}, true},
 		{"cups saved room code", Config{Enabled: true, Transport: "cupsonline", URL: testCupsRoomCode(t), Mode: "l4", Codec: "batched"}, true},
 		{"cups rejects public page URL", Config{Enabled: true, Transport: "cupsonline", URL: "https://interview.cups.online/live-coding/", Mode: "l4", Codec: "batched"}, false},
@@ -87,11 +89,23 @@ func TestBoardConnectionArgs(t *testing.T) {
 	}
 }
 
+func TestTelemostConnectionArgs(t *testing.T) {
+	c := Connection{Config: Config{Transport: "telemost", URL: "https://telemost.yandex.ru/j/88936358186517", Mode: "l4", Codec: "batched"}}
+	args := strings.Join(connectionArgs(c), " ")
+	for _, want := range []string{"--transport=telemost", "--url=" + c.URL, "--cookie-store="} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("missing %q in %s", want, args)
+		}
+	}
+}
+
 func TestSingleNegotiatedConnectionArgs(t *testing.T) {
 	c := Connection{Config: Config{Transport: "mailru", URL: "https://cloud.mail.ru/public/example", Mode: "l4", Codec: "batched", Negotiate: true, EncryptionKeyFile: "/etc/openflux/secret.key"}}
 	args := strings.Join(connectionArgs(c), " ")
 	for _, want := range []string{"--transport=mailru", "--url=https://cloud.mail.ru/public/example", "--negotiate", "--encryption-key-file=/etc/openflux/secret.key", "--cookie-store="} {
-		if !strings.Contains(args, want) { t.Fatalf("missing %q in %s", want, args) }
+		if !strings.Contains(args, want) {
+			t.Fatalf("missing %q in %s", want, args)
+		}
 	}
 }
 
@@ -100,12 +114,18 @@ func TestYandexCookieStoreIsPersistentAndCaptchaStatus(t *testing.T) {
 	t.Setenv("OPENFLUX_STATE_DIR", dir)
 	c := Connection{ID: "yandex-test", Config: Config{Transport: "yandex", URL: "https://disk.yandex.ru/i/doc", Mode: "l4", Codec: "batched"}}
 	args := strings.Join(connectionArgs(c), " ")
-	if !strings.Contains(args, "--cookie-store="+cookieStorePath(c.ID)) { t.Fatalf("missing persistent cookie store: %s", args) }
+	if !strings.Contains(args, "--cookie-store="+cookieStorePath(c.ID)) {
+		t.Fatalf("missing persistent cookie store: %s", args)
+	}
 	m := &Manager{processes: map[string]*processState{c.ID: &processState{}}}
 	m.logLocked(c.ID, "[YDOCS] SmartCaptcha detected, external solver required")
-	if !m.processes[c.ID].yandexAuthRequired { t.Fatal("server CAPTCHA not surfaced") }
+	if !m.processes[c.ID].yandexAuthRequired {
+		t.Fatal("server CAPTCHA not surfaced")
+	}
 	m.logLocked(c.ID, "[YDOCS] WebSocket connected to host")
-	if m.processes[c.ID].yandexAuthRequired { t.Fatal("server CAPTCHA not cleared on connection") }
+	if m.processes[c.ID].yandexAuthRequired {
+		t.Fatal("server CAPTCHA not cleared on connection")
+	}
 }
 
 func TestMigrateLegacyYandexCookies(t *testing.T) {
@@ -114,13 +134,23 @@ func TestMigrateLegacyYandexCookies(t *testing.T) {
 	t.Setenv("OPENFLUX_STATE_DIR", filepath.Join(dir, "state"))
 	c := Connection{ID: "target", Config: Config{Transport: "yandex", URL: "https://disk.yandex.ru/i/target"}}
 	legacy := `{"https://disk.yandex.ru/i/target":{"session":"old"},"https://disk.yandex.ru/i/other":{"session":"other"}}`
-	if err := os.WriteFile("cookies-yandex.json", []byte(legacy), 0600); err != nil { t.Fatal(err) }
-	if err := migrateLegacyCookieStore(c); err != nil { t.Fatal(err) }
+	if err := os.WriteFile("cookies-yandex.json", []byte(legacy), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateLegacyCookieStore(c); err != nil {
+		t.Fatal(err)
+	}
 	raw, err := os.ReadFile(cookieStorePath(c.ID))
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	var jars map[string]map[string]string
-	if err := json.Unmarshal(raw, &jars); err != nil { t.Fatal(err) }
-	if jars[c.URL]["session"] != "old" || len(jars) != 1 { t.Fatalf("unexpected migrated cookie keys: %v", len(jars)) }
+	if err := json.Unmarshal(raw, &jars); err != nil {
+		t.Fatal(err)
+	}
+	if jars[c.URL]["session"] != "old" || len(jars) != 1 {
+		t.Fatalf("unexpected migrated cookie keys: %v", len(jars))
+	}
 }
 
 func TestAuthenticatedConnectionArgs(t *testing.T) {
@@ -138,40 +168,64 @@ func TestAuthenticatedConnectionArgs(t *testing.T) {
 
 func TestSessionContextSelectsYandexAndAllowsOverride(t *testing.T) {
 	c := Connection{ID: "mix", Config: Config{Transport: "yandex", Mode: "l4", Codec: "batched", Transports: []TransportLink{{Type: "direct", Priority: 100}, {Type: "mailru", URL: "https://cloud.mail.ru/public/mail", Priority: 30}, {Type: "yandex", URL: "https://disk.yandex.ru/i/doc", Priority: 50}}}}
-	if got := sessionContextURL(c); got != "https://disk.yandex.ru/i/doc" { t.Fatalf("automatic context = %q", got) }
+	if got := sessionContextURL(c); got != "https://disk.yandex.ru/i/doc" {
+		t.Fatalf("automatic context = %q", got)
+	}
 	c.SessionContextURL = "https://disk.yandex.ru/i/another"
-	if got := sessionContextURL(c); got != c.SessionContextURL { t.Fatalf("override context = %q", got) }
+	if got := sessionContextURL(c); got != c.SessionContextURL {
+		t.Fatalf("override context = %q", got)
+	}
 	c.SessionContextURL = ""
 	c.Transports = c.Transports[:2]
-	if got := sessionContextURL(c); got != "https://cloud.mail.ru/public/mail" { t.Fatalf("mail-only context = %q", got) }
+	if got := sessionContextURL(c); got != "https://cloud.mail.ru/public/mail" {
+		t.Fatalf("mail-only context = %q", got)
+	}
 }
 
 func TestNamedSessionConfigAndManagedKey(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("OPENFLUX_STATE_DIR", dir)
 	c := Connection{ID: "example", Config: Config{Enabled: true, Transport: "yandex", Mode: "l4", Codec: "batched", Transports: []TransportLink{{Type: "yandex", URL: "https://disk.yandex.ru/i/one", Priority: 50}, {Type: "yandex", URL: "https://disk.yandex.ru/i/two", Priority: 75}, {Type: "mailru", URL: "https://cloud.mail.ru/public/three", Priority: 25}}}}
-	if !needsNamedConfig(c) || !strings.Contains(strings.Join(connectionArgs(c), " "), "--config=") { t.Fatal("duplicate documents must use named config") }
+	if !needsNamedConfig(c) || !strings.Contains(strings.Join(connectionArgs(c), " "), "--config=") {
+		t.Fatal("duplicate documents must use named config")
+	}
 	created, err := prepareKey(&c, nil)
-	if err != nil || !created { t.Fatalf("prepare key: %v", err) }
-	if err := writeSessionConfig(c); err != nil { t.Fatal(err) }
+	if err != nil || !created {
+		t.Fatalf("prepare key: %v", err)
+	}
+	if err := writeSessionConfig(c); err != nil {
+		t.Fatal(err)
+	}
 	raw, err := os.ReadFile(sessionConfigPath(c.ID))
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, want := range []string{"[Transport \"yandex\"]", "[Transport \"yandex-2\"]", "URL = https://disk.yandex.ru/i/one", "URL = https://disk.yandex.ru/i/two", "[Transport \"mailru\"]"} {
-		if !strings.Contains(string(raw), want) { t.Fatalf("missing %q in config %s", want, raw) }
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("missing %q in config %s", want, raw)
+		}
 	}
 	m := &Manager{connections: []Connection{c}}
 	key, err := m.connectionKey(c.ID)
-	if err != nil || len(key) != 64 { t.Fatalf("managed key: %q, %v", key, err) }
+	if err != nil || len(key) != 64 {
+		t.Fatalf("managed key: %q, %v", key, err)
+	}
 }
 
 func TestPastedEncryptionKeyIsStoredAsFile(t *testing.T) {
 	t.Setenv("OPENFLUX_STATE_DIR", t.TempDir())
 	c := Connection{ID: "pasted", Config: Config{Enabled: true, Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "client-secret-value", Transports: []TransportLink{{Type: "direct", Priority: 50}}}}
 	created, err := prepareKey(&c, nil)
-	if err != nil || !created { t.Fatalf("prepare pasted key: %v", err) }
-	if c.EncryptionKeyFile != managedKeyPath(c.ID) { t.Fatalf("key path: %q", c.EncryptionKeyFile) }
+	if err != nil || !created {
+		t.Fatalf("prepare pasted key: %v", err)
+	}
+	if c.EncryptionKeyFile != managedKeyPath(c.ID) {
+		t.Fatalf("key path: %q", c.EncryptionKeyFile)
+	}
 	raw, err := os.ReadFile(c.EncryptionKeyFile)
-	if err != nil || strings.TrimSpace(string(raw)) != "client-secret-value" { t.Fatalf("stored key: %v", err) }
+	if err != nil || strings.TrimSpace(string(raw)) != "client-secret-value" {
+		t.Fatalf("stored key: %v", err)
+	}
 }
 
 func TestTailFile(t *testing.T) {

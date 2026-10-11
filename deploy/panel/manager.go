@@ -143,7 +143,7 @@ func defaults() Config { return Config{Transport: "yandex", Mode: "l4", Codec: "
 
 func validateConfig(c Config) error {
 	switch c.Transport {
-	case "yandex", "vyandex", "boards", "mailru", "cupsonline", "direct":
+	case "yandex", "vyandex", "boards", "mailru", "cupsonline", "telemost", "direct":
 	default:
 		return fmt.Errorf("unsupported transport %q", c.Transport)
 	}
@@ -160,7 +160,7 @@ func validateConfig(c Config) error {
 		if c.SessionContextURL != "" {
 			return fmt.Errorf("session context URL requires a protected session")
 		}
-			if c.Negotiate && c.Codec != "batched" {
+		if c.Negotiate && c.Codec != "batched" {
 			return fmt.Errorf("negotiation requires batched codec")
 		}
 		if c.DirectListen != "" || c.MaxPacketSize != 0 {
@@ -194,7 +194,7 @@ func validateConfig(c Config) error {
 	direct := false
 	for _, link := range c.Transports {
 		switch link.Type {
-		case "yandex", "vyandex", "boards", "mailru", "cupsonline", "direct":
+		case "yandex", "vyandex", "boards", "mailru", "cupsonline", "telemost", "direct":
 		default:
 			return fmt.Errorf("unsupported session transport %q", link.Type)
 		}
@@ -251,6 +251,9 @@ func validateTransportURL(kind, value string, enabled bool) error {
 	}
 	if kind == "boards" && (u.Scheme != "https" || !strings.EqualFold(u.Hostname(), "boards.yandex.ru") || strings.TrimSpace(u.Query().Get("hash")) == "") {
 		return fmt.Errorf("Yandex Board requires an https://boards.yandex.ru/... URL with a hash parameter")
+	}
+	if kind == "telemost" && (u.Scheme != "https" || !strings.EqualFold(u.Hostname(), "telemost.yandex.ru") || strings.Trim(u.Path, "/") == "") {
+		return fmt.Errorf("Yandex Telemost requires an https://telemost.yandex.ru/... conference link")
 	}
 	return nil
 }

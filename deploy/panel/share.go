@@ -123,7 +123,7 @@ func buildShareConfig(c Connection, cupsCode, secret, host string) (shareConfig,
 			if t.URL == "" {
 				return shareConfig{}, fmt.Errorf("Cups.online room code is not available yet; start the connection first")
 			}
-		case "yandex", "vyandex", "boards", "mailru":
+		case "yandex", "vyandex", "boards", "mailru", "telemost":
 			if t.URL == "" {
 				return shareConfig{}, fmt.Errorf("document URL is missing")
 			}
