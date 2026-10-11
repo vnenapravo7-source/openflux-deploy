@@ -159,7 +159,18 @@ install_go(){
 }
 
 write_env(){
-  [ "$EXISTING_USERS" -eq 0 ] || return 0
+  if [ "$EXISTING_USERS" -ne 0 ]; then
+    # Keep credentials and the node token, but honor an explicitly requested
+    # listening port during a reinstall.
+    if [ "$PORT_EXPLICIT" -eq 1 ]; then
+      if grep -q '^OPENFLUX_LISTEN=' "$CONFIG_DIR/panel.env"; then
+        sed -i "s|^OPENFLUX_LISTEN=.*|OPENFLUX_LISTEN=:$PORT|" "$CONFIG_DIR/panel.env"
+      else
+        printf 'OPENFLUX_LISTEN=:%s\n' "$PORT" >>"$CONFIG_DIR/panel.env"
+      fi
+    fi
+    return 0
+  fi
   umask 077
   cat >"$CONFIG_DIR/panel.env" <<EOF
 OPENFLUX_ADMIN_USER=$(escape_env "$ADMIN_USER")
