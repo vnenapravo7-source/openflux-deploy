@@ -18,6 +18,18 @@ say(){ printf '\033[1;36m[OpenFlux]\033[0m %s\n' "$*"; }
 fail(){ printf '\033[1;31m[OpenFlux] Ошибка:\033[0m %s\n' "$*" >&2; exit 1; }
 need_root(){ [ "$(id -u)" -eq 0 ] || fail "запустите установщик от root: sudo bash ..."; }
 have(){ command -v "$1" >/dev/null 2>&1; }
+
+# The first address from `hostname -I` is frequently a Docker, VPN or private
+# network address. Prefer the outward-facing IPv4 only for the user-facing
+# installation hint; the panel itself still listens on every interface.
+public_ipv4(){
+  local ip
+  ip="$(curl -4fsS --connect-timeout 3 --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+  case "$ip" in
+    *[!0-9.]*|*.*.*.*.*|'' ) return 1 ;;
+  esac
+  printf '%s\n' "$ip"
+}
 random_hex(){ od -An -N "$1" -tx1 /dev/urandom | tr -d ' \n'; }
 escape_env(){ local v="$1"; v="${v//\\/\\\\}"; v="${v//\"/\\\"}"; printf '"%s"' "$v"; }
 
@@ -291,7 +303,12 @@ write_env
 if [ "$INSTALL_MODE" = systemd ]; then install_systemd; else install_docker; fi
 
 FINGERPRINT="$(openssl x509 -in "$CONFIG_DIR/tls/cert.pem" -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':')"
-IP="$(hostname -I 2>/dev/null | awk '{print $1}')"; [ -n "$IP" ] || IP="SERVER_IP"
+IP="$(public_ipv4 || true)"
+if [ -z "$IP" ]; then
+  IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  [ -n "$IP" ] || IP="SERVER_IP"
+  say "Не удалось определить публичный IP. Если это VPS, используйте его внешний IP или домен, а не $IP."
+fi
 say "Готово: https://$IP:$PORT"
 if [ "$EXISTING_USERS" -eq 0 ]; then
   printf '  Логин: %s\n  Пароль: %s\n' "$ADMIN_USER" "$ADMIN_PASSWORD"
