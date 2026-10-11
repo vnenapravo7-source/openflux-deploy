@@ -121,7 +121,7 @@ function render(){
   if(!$("#usernameForm").dataset.dirty)$("#accountUsername").value=state.me.username;
   $("#connectionCount").textContent=connections.length;$("#connectionTotal").textContent=connections.length;$("#runningTotal").textContent=`${running} работают`;
   const pill=$("#statusPill");pill.className=`status ${running?'online':'offline'}`;pill.innerHTML=`<i></i>${running} / ${connections.length} работают`;
-  $("#version").textContent=(state.upstream_version||"unknown").slice(0,12);$("#panelVersion").textContent=`панель ${state.panel_version} · ${(state.panel_revision||"unknown").slice(0,8)}`;
+  $("#version").textContent=state.upstream_version_label||`main · ${(state.upstream_version||"unknown").slice(0,8)}`;$("#panelVersion").textContent=`панель ${state.panel_version||"—"}`;
   if(admin){
     const point=(state.traffic||[]).at(-1)||{},busy=!!state.updating||!!state.updating_panel;
     $("#rxNow").textContent=`${bytes(point.rx)}/с`;$("#txNow").textContent=`${bytes(point.tx)}/с`;$("#autoUpdate").checked=!!state.auto_update;
@@ -137,8 +137,8 @@ function render(){
     $("#updateBtn").disabled=busy||!!state.checking_versions||!serverUpdate;
     $("#updateBtn").textContent=serverFix&&!serverNew?"Исправить Board":"Обновить сервер";
     $("#updatePanelBtn").disabled=busy||!!state.checking_versions||!panelNew;
-    $("#serverVersionStatus").textContent=serverFix?"Доступно исправление Board (HTTP 415)":state.latest_upstream?`Последняя ревизия: ${state.latest_upstream.slice(0,8)}${serverNew?" · доступно обновление":" · актуально"}`:"";
-    $("#panelVersionStatus").textContent=state.latest_panel?`Последняя ревизия: ${state.latest_panel.slice(0,8)}${panelNew?" · доступно обновление":" · актуально"}`:"";
+    $("#serverVersionStatus").textContent=serverFix?"Доступно исправление Board (HTTP 415)":state.latest_upstream?`OpenFlux main · ${state.latest_upstream.slice(0,8)}${serverNew?" · доступно обновление":" · актуально"}`:"";
+    $("#panelVersionStatus").textContent=state.latest_panel?`Панель ${state.panel_version||"—"}${panelNew?" · доступно обновление":" · актуально"}`:"";
     $("#serverRollbackTarget").textContent=state.previous_server_revision&&state.previous_server_revision!=="unknown"?`Резервная версия: ${state.previous_server_revision.slice(0,8)}${state.previous_server_revision===state.upstream_version?" · совпадает с текущей":""}`:"Резервной версии пока нет";
     $("#panelRollbackTarget").textContent=state.previous_panel_revision&&state.previous_panel_revision!=="unknown"?`Резервная версия: ${state.previous_panel_revision.slice(0,8)}${state.previous_panel_revision===state.panel_revision?" · совпадает с текущей":""}`:"Резервной версии пока нет";
     $("#updateNotice").classList.toggle("hidden",!serverUpdate&&!panelNew);

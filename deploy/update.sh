@@ -6,6 +6,7 @@ CONFIG="${OPENFLUX_CONFIG:-/etc/openflux-deploy/config.json}"
 STATE_DIR="${OPENFLUX_STATE_DIR:-/var/lib/openflux-deploy}"
 BINARY="${OPENFLUX_BINARY:-$STATE_DIR/bin/openflux}"
 VERSION_FILE="$STATE_DIR/upstream-version"
+LABEL_FILE="$STATE_DIR/upstream-version-label"
 PATCH_FILE="$STATE_DIR/server-patch-revision"
 PATCH_DIR="${OPENFLUX_PATCH_DIR:-/usr/local/lib/openflux-deploy}"
 FORCE=0
@@ -43,10 +44,14 @@ if [ "${1:-}" = "--rollback" ]; then
   cp -p "$BINARY.rollback" "$BINARY.new"
   cp -p "$VERSION_FILE" "$VERSION_FILE.swap"
   cp -p "$VERSION_FILE.rollback" "$VERSION_FILE.new"
+  if [ -f "$LABEL_FILE" ]; then cp -p "$LABEL_FILE" "$LABEL_FILE.swap"; fi
+  if [ -f "$LABEL_FILE.rollback" ]; then cp -p "$LABEL_FILE.rollback" "$LABEL_FILE.new"; fi
   mv "$BINARY.new" "$BINARY"
   mv "$BINARY.swap" "$BINARY.rollback"
   mv "$VERSION_FILE.new" "$VERSION_FILE"
   mv "$VERSION_FILE.swap" "$VERSION_FILE.rollback"
+  if [ -f "$LABEL_FILE.new" ]; then mv "$LABEL_FILE.new" "$LABEL_FILE"; fi
+  if [ -f "$LABEL_FILE.swap" ]; then mv "$LABEL_FILE.swap" "$LABEL_FILE.rollback"; fi
   if [ -f "$PATCH_FILE.rollback" ]; then
     cp -p "$PATCH_FILE" "$PATCH_FILE.swap" 2>/dev/null || true
     cp -p "$PATCH_FILE.rollback" "$PATCH_FILE.new"
@@ -95,18 +100,22 @@ say "building upstream $LATEST"
 git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_REPO" "$TMP/src"
 git -C "$TMP/src" fetch --quiet --depth 1 origin "$LATEST"
 git -C "$TMP/src" checkout --quiet --detach FETCH_HEAD
+UPSTREAM_LABEL="$(git -C "$TMP/src" describe --tags --always --match 'v[0-9]*') · $(git -C "$TMP/src" rev-parse --short=8 HEAD)"
 sh /usr/local/lib/openflux-deploy/patch-upstream.sh "$TMP/src"
 (cd "$TMP/src" && GOTOOLCHAIN=auto go build -trimpath -ldflags='-s -w' -o "$TMP/openflux" .)
 "$TMP/openflux" --help >/dev/null 2>&1
 
 if [ -f "$BINARY" ]; then cp -p "$BINARY" "$BINARY.rollback"; fi
 if [ -f "$VERSION_FILE" ]; then cp -p "$VERSION_FILE" "$VERSION_FILE.rollback"; fi
+if [ -f "$LABEL_FILE" ]; then cp -p "$LABEL_FILE" "$LABEL_FILE.rollback"; fi
 printf '%s\n' "${CURRENT_PATCH:-legacy}" >"$PATCH_FILE.rollback"
 install -m 755 "$TMP/openflux" "$BINARY.new"
 mv "$BINARY.new" "$BINARY"
 printf '%s\n' "$LATEST" >"$VERSION_FILE.new"
 mv "$VERSION_FILE.new" "$VERSION_FILE"
-say "installed $LATEST"
+printf '%s\n' "$UPSTREAM_LABEL" >"$LABEL_FILE.new"
+mv "$LABEL_FILE.new" "$LABEL_FILE"
+say "installed $UPSTREAM_LABEL"
 
 restart_exit
 
@@ -120,6 +129,7 @@ if ! check_health; then
     mv "$BINARY.new" "$BINARY"
     printf '%s\n' "$CURRENT" >"$VERSION_FILE.new"
     mv "$VERSION_FILE.new" "$VERSION_FILE"
+    if [ -f "$LABEL_FILE.rollback" ]; then cp -p "$LABEL_FILE.rollback" "$LABEL_FILE.new" && mv "$LABEL_FILE.new" "$LABEL_FILE"; fi
     restart_exit
     exit 1
   fi

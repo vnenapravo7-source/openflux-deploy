@@ -11,7 +11,9 @@ COPY source/deploy/patch-upstream.sh /tmp/deploy/patch-upstream.sh
 COPY source/deploy/patches/ /tmp/deploy/patches/
 RUN sh /tmp/deploy/patch-upstream.sh /src
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/openflux . && git rev-parse HEAD >/out/upstream-version
+    CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/openflux . && \
+    git rev-parse HEAD >/out/upstream-version && \
+    printf '%s · %s\n' "$(git describe --tags --always --match 'v[0-9]*')" "$(git rev-parse --short=8 HEAD)" >/out/upstream-version-label
 
 FROM golang:1.26-alpine AS panel-build
 ARG OPENFLUX_DEPLOY_REVISION=bundled
@@ -25,6 +27,7 @@ FROM golang:1.26-alpine
 RUN apk add --no-cache bash ca-certificates curl git iptables jq openssl
 COPY --from=openflux-build /out/openflux /usr/local/lib/openflux-deploy/openflux.seed
 COPY --from=openflux-build /out/upstream-version /usr/local/lib/openflux-deploy/upstream-version.seed
+COPY --from=openflux-build /out/upstream-version-label /usr/local/lib/openflux-deploy/upstream-version-label.seed
 COPY --from=panel-build /out/openflux-panel /usr/local/lib/openflux-deploy/openflux-panel.seed
 COPY --from=panel-build /out/panel-revision /usr/local/lib/openflux-deploy/panel-revision.seed
 COPY update.sh /usr/local/lib/openflux-deploy/update.sh

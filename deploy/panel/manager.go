@@ -1144,6 +1144,21 @@ func (m *Manager) version() string {
 	return revisionFromFile(m.versionPath)
 }
 
+func (m *Manager) upstreamVersionLabel() string {
+	label := revisionFromFile(filepath.Join(filepath.Dir(m.versionPath), "upstream-version-label"))
+	if label == "unknown" {
+		return "main · " + shortRevision(m.version())
+	}
+	return label
+}
+
+func shortRevision(revision string) string {
+	if len(revision) > 8 {
+		return revision[:8]
+	}
+	return revision
+}
+
 func (m *Manager) panelRevision() string {
 	return revisionFromFile(m.panelRevisionPath)
 }
@@ -1160,7 +1175,7 @@ func revisionFromFile(path string) string {
 }
 
 func (m *Manager) state(user User) map[string]any {
-	state := map[string]any{"me": UserView{user.ID, user.Username, user.Role}, "connections": m.connectionViews(user), "upstream_version": m.version(), "panel_version": panelVersion, "panel_revision": m.panelRevision(), "direct_ports_ready": dockerDirectReady()}
+	state := map[string]any{"me": UserView{user.ID, user.Username, user.Role}, "connections": m.connectionViews(user), "upstream_version": m.version(), "upstream_version_label": m.upstreamVersionLabel(), "panel_version": panelVersion, "panel_revision": m.panelRevision(), "direct_ports_ready": dockerDirectReady()}
 	if user.Role == "admin" {
 		m.mu.Lock()
 		state["traffic"] = append([]TrafficPoint{}, m.traffic...)
