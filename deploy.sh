@@ -7,6 +7,7 @@ UPSTREAM_REPO="${OPENFLUX_UPSTREAM_REPO:-https://github.com/p1neappleXpress/Open
 INSTALL_MODE="${OPENFLUX_INSTALL_MODE:-auto}"
 ROLE="${OPENFLUX_ROLE:-controller}"
 PORT="${OPENFLUX_PORT:-8088}"
+PORT_EXPLICIT=0
 ADMIN_USER="${OPENFLUX_ADMIN_USER:-admin}"
 ADMIN_PASSWORD="${OPENFLUX_ADMIN_PASSWORD:-}"
 NODE_TOKEN="${OPENFLUX_NODE_TOKEN:-}"
@@ -48,7 +49,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --mode) INSTALL_MODE="${2:?}"; shift 2;;
     --role) ROLE="${2:?}"; shift 2;;
-    --port) PORT="${2:?}"; shift 2;;
+    --port) PORT="${2:?}"; PORT_EXPLICIT=1; shift 2;;
     -h|--help) usage; exit 0;;
     *) fail "неизвестный аргумент: $1";;
   esac
@@ -73,9 +74,13 @@ EXISTING_USERS=0
 if [ -f "$CONFIG_DIR/users.json" ]; then
   EXISTING_USERS=1
   [ -f "$CONFIG_DIR/panel.env" ] || fail "users.json существует, но panel.env отсутствует; восстановите конфигурацию перед переустановкой"
-  OLD_PORT="$(sed -n 's/^OPENFLUX_LISTEN=://p' "$CONFIG_DIR/panel.env" | head -n 1)"
-  [ -n "$OLD_PORT" ] && PORT="$OLD_PORT"
-  say "Найдены существующие пользователи: пароли и порт останутся прежними"
+  if [ "$PORT_EXPLICIT" -eq 0 ]; then
+    OLD_PORT="$(sed -n 's/^OPENFLUX_LISTEN=://p' "$CONFIG_DIR/panel.env" | head -n 1)"
+    [ -n "$OLD_PORT" ] && PORT="$OLD_PORT"
+    say "Найдены существующие пользователи: пароль и порт останутся прежними"
+  else
+    say "Найдены существующие пользователи: пароль сохранится, порт будет изменён на $PORT"
+  fi
 else
   if [ -z "$ADMIN_PASSWORD" ]; then ADMIN_PASSWORD="$(random_hex 12)"; GENERATED_PASSWORD=1; else GENERATED_PASSWORD=0; fi
   if [ -z "$NODE_TOKEN" ]; then NODE_TOKEN="$(random_hex 32)"; fi
