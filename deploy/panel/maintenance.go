@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -90,6 +92,96 @@ func remoteHead(repoURL, ref string) (string, error) {
 	return fields[0], nil
 }
 
+// latestReleaseHead resolves the newest stable vX.Y.Z tag rather than main.
+// OpenFlux publishes node fixes from release branches, which can be ahead of
+// main for a while.  A panel must offer that published release to its users.
+func latestReleaseHead(repoURL string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "ls-remote", "--tags", "--refs", repoURL, "refs/tags/v[0-9]*").Output()
+	if err != nil {
+		return "", fmt.Errorf("remote release check failed: %w", err)
+	}
+	tag, ok := latestStableTag(string(out))
+	if !ok {
+		return "", fmt.Errorf("no stable release tag found")
+	}
+	out, err = exec.CommandContext(ctx, "git", "ls-remote", repoURL, "refs/tags/"+tag+"^{}", "refs/tags/"+tag).Output()
+	if err != nil {
+		return "", fmt.Errorf("remote release lookup failed: %w", err)
+	}
+	var fallback string
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || len(fields[0]) != 40 {
+			continue
+		}
+		if _, err := hex.DecodeString(fields[0]); err != nil {
+			continue
+		}
+		if strings.HasSuffix(fields[1], "^{}") {
+			return fields[0], nil // annotated tag: use the peeled commit
+		}
+		fallback = fields[0]
+	}
+	if fallback == "" {
+		return "", fmt.Errorf("release tag %s not found", tag)
+	}
+	return fallback, nil
+}
+
+func latestStableTag(output string) (string, bool) {
+	type candidate struct {
+		tag     string
+		version []int
+	}
+	var candidates []candidate
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 || !strings.HasPrefix(fields[1], "refs/tags/v") {
+			continue
+		}
+		tag := strings.TrimPrefix(fields[1], "refs/tags/")
+		parts := strings.Split(strings.TrimPrefix(tag, "v"), ".")
+		version := make([]int, len(parts))
+		valid := len(parts) > 0
+		for i, part := range parts {
+			if part == "" {
+				valid = false
+				break
+			}
+			n, err := strconv.Atoi(part)
+			if err != nil || n < 0 {
+				valid = false
+				break
+			}
+			version[i] = n
+		}
+		if valid {
+			candidates = append(candidates, candidate{tag: tag, version: version})
+		}
+	}
+	if len(candidates) == 0 {
+		return "", false
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		for n := 0; n < len(candidates[i].version) || n < len(candidates[j].version); n++ {
+			var left, right int
+			if n < len(candidates[i].version) {
+				left = candidates[i].version[n]
+			}
+			if n < len(candidates[j].version) {
+				right = candidates[j].version[n]
+			}
+			if left != right {
+				return left < right
+			}
+		}
+		return candidates[i].tag < candidates[j].tag
+	})
+	return candidates[len(candidates)-1].tag, true
+}
+
 func (m *Manager) checkVersions(force bool) {
 	m.mu.Lock()
 	if m.checkingVersions || (!force && !m.lastVersionCheck.IsZero() && time.Since(m.lastVersionCheck) < 10*time.Minute) {
@@ -109,7 +201,7 @@ func (m *Manager) checkVersions(force bool) {
 		}
 		results := make(chan result, 2)
 		go func() {
-			sha, err := remoteHead(env("OPENFLUX_UPSTREAM_REPO", "https://github.com/p1neappleXpress/OpenFlux.git"), "main")
+			sha, err := latestReleaseHead(env("OPENFLUX_UPSTREAM_REPO", "https://github.com/p1neappleXpress/OpenFlux.git"))
 			results <- result{name: "upstream", sha: sha, err: err}
 		}()
 		go func() {

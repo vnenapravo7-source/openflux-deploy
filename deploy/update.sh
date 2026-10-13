@@ -87,16 +87,23 @@ if [ "$FORCE" -eq 0 ] && [ -f "$CONFIG" ] && grep -Eq '"auto_update"[[:space:]]*
 fi
 
 install -d -m 755 "$STATE_DIR/bin"
-LATEST="$(git ls-remote "$UPSTREAM_REPO" refs/heads/main | awk '{print $1}')"
-[ -n "$LATEST" ] || { say "cannot resolve upstream main"; exit 1; }
+# Upstream cuts stable node releases on release branches before (and sometimes
+# without) merging them back into main. Follow the newest vX.Y.Z tag so the
+# panel does not miss a released compatibility fix, such as the Mail.ru 0.7.1
+# carrier change.
+LATEST_TAG="$(git ls-remote --tags --refs "$UPSTREAM_REPO" 'refs/tags/v[0-9]*' | awk '{sub("refs/tags/", "", $2); print $2}' | grep -E '^v[0-9]+(\.[0-9]+)*$' | sort -V | tail -n 1)"
+[ -n "$LATEST_TAG" ] || { say "cannot resolve an upstream release tag"; exit 1; }
+TAG_REFS="$(git ls-remote "$UPSTREAM_REPO" "refs/tags/$LATEST_TAG^{}" "refs/tags/$LATEST_TAG")"
+LATEST="$(printf '%s\n' "$TAG_REFS" | awk '/\^\{\}$/ { print $1; found=1; exit } END { if (!found && NR > 0) print $1 }')"
+[ -n "$LATEST" ] || { say "cannot resolve upstream release $LATEST_TAG"; exit 1; }
 CURRENT="$(cat "$VERSION_FILE" 2>/dev/null || true)"
 PATCH_REVISION="$(sha256sum "$PATCH_DIR/patch-upstream.sh" "$PATCH_DIR"/patches/*.patch | sha256sum | awk '{print $1}')"
 CURRENT_PATCH="$(cat "$PATCH_FILE" 2>/dev/null || true)"
-if [ "$LATEST" = "$CURRENT" ] && [ "$PATCH_REVISION" = "$CURRENT_PATCH" ]; then say "already current ($LATEST)"; exit 0; fi
+if [ "$LATEST" = "$CURRENT" ] && [ "$PATCH_REVISION" = "$CURRENT_PATCH" ]; then say "already current ($LATEST_TAG · $LATEST)"; exit 0; fi
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-say "building upstream $LATEST"
+say "building upstream $LATEST_TAG ($LATEST)"
 git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_REPO" "$TMP/src"
 git -C "$TMP/src" fetch --quiet --depth 1 origin "$LATEST"
 git -C "$TMP/src" checkout --quiet --detach FETCH_HEAD
