@@ -143,7 +143,7 @@ func defaults() Config { return Config{Transport: "yandex", Mode: "l4", Codec: "
 
 func validateConfig(c Config) error {
 	switch c.Transport {
-	case "yandex", "vyandex", "boards", "mailru", "cupsonline", "telemost", "direct":
+	case "yandex", "vyandex", "boards", "mailru", "cupsonline", "avito", "telemost", "direct":
 	default:
 		return fmt.Errorf("unsupported transport %q", c.Transport)
 	}
@@ -194,11 +194,11 @@ func validateConfig(c Config) error {
 	direct := false
 	for _, link := range c.Transports {
 		switch link.Type {
-		case "yandex", "vyandex", "boards", "mailru", "cupsonline", "telemost", "direct":
+		case "yandex", "vyandex", "boards", "mailru", "cupsonline", "avito", "telemost", "direct":
 		default:
 			return fmt.Errorf("unsupported session transport %q", link.Type)
 		}
-		if seen[link.Type] && (link.Type == "direct" || link.Type == "cupsonline") {
+		if seen[link.Type] && (link.Type == "direct" || link.Type == "cupsonline" || link.Type == "avito") {
 			return fmt.Errorf("transport %q appears more than once", link.Type)
 		}
 		seen[link.Type] = true
@@ -235,12 +235,12 @@ func validateTransportURL(kind, value string, enabled bool) error {
 	if !enabled {
 		return nil
 	}
-	if kind == "cupsonline" {
+	if kind == "cupsonline" || kind == "avito" {
 		value = strings.TrimSpace(value)
 		if value == "" || validCupsCode(value) {
 			return nil
 		}
-		return fmt.Errorf("Cups.online requires a base64 room code from the exit node")
+		return fmt.Errorf("%s requires a base64 room code from the exit node", transportLabel(kind))
 	}
 	if strings.TrimSpace(value) == "" {
 		return fmt.Errorf("document URL is required for %s", kind)
@@ -256,6 +256,13 @@ func validateTransportURL(kind, value string, enabled bool) error {
 		return fmt.Errorf("Yandex Telemost requires an https://telemost.yandex.ru/... conference link")
 	}
 	return nil
+}
+
+func transportLabel(kind string) string {
+	if kind == "avito" {
+		return "Avito Code"
+	}
+	return "Cups.online"
 }
 
 func validateDirectListen(value string) error {
@@ -682,7 +689,7 @@ func (m *Manager) startLocked(id string) error {
 		return err
 	}
 	p.cmd, p.startedAt, p.lastError = cmd, time.Now(), ""
-	p.clientCode, p.expectCupsCode, p.yandexAuthRequired = configuredCupsCode(c.Config), false, false
+	p.clientCode, p.expectCupsCode, p.yandexAuthRequired = configuredRoomCode(c.Config), false, false
 	p.cupsRestartScheduled = false
 	m.logLocked(id, fmt.Sprintf("[panel] started %s, pid=%d", c.Name, cmd.Process.Pid))
 	go m.capture(id, pipe)
@@ -718,10 +725,10 @@ func (m *Manager) logLocked(id, line string) {
 		} else if validCupsCode(candidate) {
 			p.clientCode = candidate
 			p.expectCupsCode = false
-			freshRooms := m.freshSingleCupsLocked(id)
-			if err := m.persistCupsCodeLocked(id, candidate); err != nil {
-				p.lastError = "failed to persist Cups.online room code: " + err.Error()
-				p.logs = append(p.logs, time.Now().Format("15:04:05")+"  [panel] WARNING: Cups room code is not saved; restarting may create new rooms")
+			freshRooms, kind := m.freshSingleRoomTransportLocked(id)
+			if err := m.persistRoomCodeLocked(id, candidate); err != nil {
+				p.lastError = "failed to persist room code: " + err.Error()
+				p.logs = append(p.logs, time.Now().Format("15:04:05")+"  [panel] WARNING: "+transportLabel(kind)+" room code is not saved; restarting may create new rooms")
 			} else if freshRooms && !p.cupsRestartScheduled {
 				// The upstream first-start path creates rooms without --url. Rejoining
 				// the just-saved room code is the stable path used on subsequent starts.
@@ -758,15 +765,15 @@ func validCupsCode(value string) bool {
 	return true
 }
 
-// freshSingleCupsLocked reports the first launch of a standalone Cups
-// connection: upstream created its room code without a --url argument.
-func (m *Manager) freshSingleCupsLocked(id string) bool {
+// freshSingleRoomTransportLocked reports the first launch of a standalone
+// room carrier: upstream created its room code without a --url argument.
+func (m *Manager) freshSingleRoomTransportLocked(id string) (bool, string) {
 	i, ok := m.findLocked(id)
 	if !ok {
-		return false
+		return false, ""
 	}
 	c := m.connections[i]
-	return len(c.Transports) == 0 && c.Transport == "cupsonline" && strings.TrimSpace(c.URL) == ""
+	return len(c.Transports) == 0 && (c.Transport == "cupsonline" || c.Transport == "avito") && strings.TrimSpace(c.URL) == "", c.Transport
 }
 
 // restartFreshCups switches the first Cups launch to its persisted room code.
@@ -778,33 +785,33 @@ func (m *Manager) restartFreshCups(id string, initial *exec.Cmd) {
 	defer m.mu.Unlock()
 	i, ok := m.findLocked(id)
 	p := m.processes[id]
-	if !ok || p == nil || p.cmd != initial || !p.cupsRestartScheduled || !m.connections[i].Enabled || m.connections[i].Transport != "cupsonline" || !validCupsCode(m.connections[i].URL) {
+	if !ok || p == nil || p.cmd != initial || !p.cupsRestartScheduled || !m.connections[i].Enabled || (m.connections[i].Transport != "cupsonline" && m.connections[i].Transport != "avito") || !validCupsCode(m.connections[i].URL) {
 		return
 	}
-	m.logLocked(id, "[panel] Cups.online: комнаты сохранены; перезапускаю подключение с этим же кодом")
+	m.logLocked(id, "[panel] "+transportLabel(m.connections[i].Transport)+": комнаты сохранены; перезапускаю подключение с этим же кодом")
 	if err := m.restartLocked(id); err != nil {
-		p.lastError = "failed to restart Cups.online with saved room code: " + err.Error()
+		p.lastError = "failed to restart with saved room code: " + err.Error()
 	}
 }
 
-func configuredCupsCode(c Config) string {
+func configuredRoomCode(c Config) string {
 	if len(c.Transports) == 0 {
-		if c.Transport == "cupsonline" && validCupsCode(c.URL) {
+		if (c.Transport == "cupsonline" || c.Transport == "avito") && validCupsCode(c.URL) {
 			return c.URL
 		}
 		return ""
 	}
 	for _, link := range c.Transports {
-		if link.Type == "cupsonline" && validCupsCode(link.URL) {
+		if (link.Type == "cupsonline" || link.Type == "avito") && validCupsCode(link.URL) {
 			return link.URL
 		}
 	}
 	return ""
 }
 
-// persistCupsCodeLocked remembers the room IDs printed by OpenFlux, so normal
+// persistRoomCodeLocked remembers the room IDs printed by OpenFlux, so normal
 // restarts rejoin those rooms instead of creating new ones. Caller holds m.mu.
-func (m *Manager) persistCupsCodeLocked(id, code string) error {
+func (m *Manager) persistRoomCodeLocked(id, code string) error {
 	if !validCupsCode(code) {
 		return fmt.Errorf("invalid Cups room code")
 	}
@@ -814,14 +821,14 @@ func (m *Manager) persistCupsCodeLocked(id, code string) error {
 			continue
 		}
 		changed := false
-		if len(c.Transports) == 0 && c.Transport == "cupsonline" {
+		if len(c.Transports) == 0 && (c.Transport == "cupsonline" || c.Transport == "avito") {
 			if c.URL != code {
 				c.URL, changed = code, true
 			}
 		} else {
 			for j := range c.Transports {
 				link := &c.Transports[j]
-				if link.Type == "cupsonline" && link.URL != code {
+				if (link.Type == "cupsonline" || link.Type == "avito") && link.URL != code {
 					link.URL, changed = code, true
 					break
 				}

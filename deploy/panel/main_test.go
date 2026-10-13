@@ -44,6 +44,9 @@ func TestValidateConfig(t *testing.T) {
 		{"cups saved room code", Config{Enabled: true, Transport: "cupsonline", URL: testCupsRoomCode(t), Mode: "l4", Codec: "batched"}, true},
 		{"cups rejects public page URL", Config{Enabled: true, Transport: "cupsonline", URL: "https://interview.cups.online/live-coding/", Mode: "l4", Codec: "batched"}, false},
 		{"single cups negotiation is ignored for compatibility", Config{Enabled: true, Transport: "cupsonline", URL: testCupsRoomCode(t), Mode: "l4", Codec: "batched", Negotiate: true}, true},
+		{"avito no room code", Config{Enabled: true, Transport: "avito", Mode: "l4", Codec: "batched"}, true},
+		{"avito saved room code", Config{Enabled: true, Transport: "avito", URL: testCupsRoomCode(t), Mode: "l4", Codec: "batched"}, true},
+		{"avito rejects public page URL", Config{Enabled: true, Transport: "avito", URL: "https://code.avito.ru/", Mode: "l4", Codec: "batched"}, false},
 		{"bad scheme", Config{Enabled: true, Transport: "mailru", URL: "file:///etc/passwd", Mode: "l3", Codec: "batched"}, false},
 		{"unknown transport", Config{Transport: "other", Mode: "l3", Codec: "batched"}, false},
 		{"authenticated session", Config{Enabled: true, Transport: "yandex", Mode: "l4", Codec: "batched", EncryptionKeyFile: "/etc/openflux-deploy/key", Transports: []TransportLink{{Type: "yandex", URL: "https://docs.yandex.ru/example", Priority: 50}, {Type: "direct", Priority: 100}}, DirectListen: ":39000", MaxPacketSize: 1500}, true},
@@ -93,6 +96,17 @@ func TestTelemostConnectionArgs(t *testing.T) {
 	c := Connection{Config: Config{Transport: "telemost", URL: "https://telemost.yandex.ru/j/88936358186517", Mode: "l4", Codec: "batched"}}
 	args := strings.Join(connectionArgs(c), " ")
 	for _, want := range []string{"--transport=telemost", "--url=" + c.URL, "--cookie-store="} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("missing %q in %s", want, args)
+		}
+	}
+}
+
+func TestAvitoConnectionArgs(t *testing.T) {
+	code := testCupsRoomCode(t)
+	c := Connection{ID: "avito-test", Config: Config{Transport: "avito", URL: code, Mode: "l4", Codec: "batched"}}
+	args := strings.Join(connectionArgs(c), " ")
+	for _, want := range []string{"--transport=avito", "--url=" + code, "--cookie-store="} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("missing %q in %s", want, args)
 		}
@@ -426,7 +440,7 @@ func TestCupsRoomCodeIsPersistedAndReusedAfterRestart(t *testing.T) {
 	if strings.Contains(args, "--negotiate") {
 		t.Fatalf("single Cups connection must not use --negotiate: %s", args)
 	}
-	if got := configuredCupsCode(saved[0].Config); got != code {
+	if got := configuredRoomCode(saved[0].Config); got != code {
 		t.Fatalf("room code shown after restart = %q, want saved code", got)
 	}
 }

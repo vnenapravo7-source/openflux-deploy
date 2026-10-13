@@ -56,7 +56,7 @@ wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/m
 
 <table>
 <tr>
-<td width="50%"><b>Подключения</b><br>Yandex Docs, Volga, Board, Telemost, Mail.ru Docs, Cups.online и Direct TCP; отдельные и мульти-профили, QR и ссылки <code>openflux://</code>.</td>
+<td width="50%"><b>Подключения</b><br>Yandex Docs, Volga, Board, Telemost, Mail.ru Docs, Cups.online, Avito Code и Direct TCP; отдельные и мульти-профили, QR и ссылки <code>openflux://</code>.</td>
 <td width="50%"><b>Панель</b><br>Пользователи и роли, журнал, статистика трафика, редактируемые инструкции с медиа.</td>
 </tr>
 <tr>
