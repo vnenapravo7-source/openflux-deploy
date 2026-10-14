@@ -116,14 +116,14 @@ func buildShareConfig(c Connection, cupsCode, secret, host string) (shareConfig,
 			}
 			t.URL = ""
 			t.Dial = net.JoinHostPort(validated, port)
-		case "cupsonline":
+		case "cupsonline", "avito":
 			if t.URL == "" {
 				t.URL = cupsCode
 			}
 			if t.URL == "" {
-				return shareConfig{}, fmt.Errorf("Cups.online room code is not available yet; start the connection first")
+				return shareConfig{}, fmt.Errorf("%s room code is not available yet; start the connection first", transportLabel(link.Type))
 			}
-		case "yandex", "vyandex", "boards", "mailru", "avito", "telemost":
+		case "yandex", "vyandex", "boards", "mailru", "telemost":
 			if t.URL == "" {
 				return shareConfig{}, fmt.Errorf("document URL is missing")
 			}

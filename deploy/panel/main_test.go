@@ -23,6 +23,18 @@ func testCupsRoomCode(t *testing.T) string {
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
+func testStripedRoomCode(t *testing.T) string {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{"v": 2, "rooms": []string{
+		"123e4567-e89b-12d3-a456-426614174000",
+		"123e4567-e89b-12d3-a456-426614174001",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw)
+}
+
 func TestValidateConfig(t *testing.T) {
 	cases := []struct {
 		name string
@@ -42,10 +54,12 @@ func TestValidateConfig(t *testing.T) {
 		{"telemost wrong host", Config{Enabled: true, Transport: "telemost", URL: "https://example.com/j/88936358186517", Mode: "l4", Codec: "batched"}, false},
 		{"cups no url", Config{Enabled: true, Transport: "cupsonline", Mode: "l4", Codec: "legacy"}, true},
 		{"cups saved room code", Config{Enabled: true, Transport: "cupsonline", URL: testCupsRoomCode(t), Mode: "l4", Codec: "batched"}, true},
+		{"cups striped room code", Config{Enabled: true, Transport: "cupsonline", URL: testStripedRoomCode(t), Mode: "l4", Codec: "batched"}, true},
 		{"cups rejects public page URL", Config{Enabled: true, Transport: "cupsonline", URL: "https://interview.cups.online/live-coding/", Mode: "l4", Codec: "batched"}, false},
 		{"single cups negotiation is ignored for compatibility", Config{Enabled: true, Transport: "cupsonline", URL: testCupsRoomCode(t), Mode: "l4", Codec: "batched", Negotiate: true}, true},
 		{"avito no room code", Config{Enabled: true, Transport: "avito", Mode: "l4", Codec: "batched"}, true},
 		{"avito saved room code", Config{Enabled: true, Transport: "avito", URL: testCupsRoomCode(t), Mode: "l4", Codec: "batched"}, true},
+		{"avito striped room code", Config{Enabled: true, Transport: "avito", URL: testStripedRoomCode(t), Mode: "l4", Codec: "batched"}, true},
 		{"avito rejects public page URL", Config{Enabled: true, Transport: "avito", URL: "https://code.avito.ru/", Mode: "l4", Codec: "batched"}, false},
 		{"bad scheme", Config{Enabled: true, Transport: "mailru", URL: "file:///etc/passwd", Mode: "l3", Codec: "batched"}, false},
 		{"unknown transport", Config{Transport: "other", Mode: "l3", Codec: "batched"}, false},
@@ -103,7 +117,7 @@ func TestTelemostConnectionArgs(t *testing.T) {
 }
 
 func TestAvitoConnectionArgs(t *testing.T) {
-	code := testCupsRoomCode(t)
+	code := testStripedRoomCode(t)
 	c := Connection{ID: "avito-test", Config: Config{Transport: "avito", URL: code, Mode: "l4", Codec: "batched"}}
 	args := strings.Join(connectionArgs(c), " ")
 	for _, want := range []string{"--transport=avito", "--url=" + code, "--cookie-store="} {
@@ -409,7 +423,7 @@ func TestUsersBootstrapAndPasswordHash(t *testing.T) {
 func TestCupsRoomCodeIsPersistedAndReusedAfterRestart(t *testing.T) {
 	dir := t.TempDir()
 	id := "cups-connection"
-	code := testCupsRoomCode(t)
+	code := testStripedRoomCode(t)
 	m := &Manager{
 		connectionsPath: filepath.Join(dir, "connections.json"),
 		connections: []Connection{{ID: id, OwnerID: "owner", Name: "Cups", Config: Config{

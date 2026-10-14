@@ -754,7 +754,22 @@ func validCupsCode(value string) bool {
 		return false
 	}
 	var ids []string
-	if err := json.Unmarshal(raw, &ids); err != nil || len(ids) == 0 {
+	// v0.7.1 introduced striped room lists.  The original wire format was a
+	// base64url JSON array; the striped format is {"v":2,"rooms":[…]}.
+	// Both are valid client codes and must survive a panel restart unchanged.
+	if len(raw) > 0 && raw[0] == '{' {
+		var list struct {
+			V     int      `json:"v"`
+			Rooms []string `json:"rooms"`
+		}
+		if err := json.Unmarshal(raw, &list); err != nil || list.V != 2 {
+			return false
+		}
+		ids = list.Rooms
+	} else if err := json.Unmarshal(raw, &ids); err != nil {
+		return false
+	}
+	if len(ids) == 0 {
 		return false
 	}
 	for _, id := range ids {
