@@ -239,7 +239,12 @@ func (s *UserStore) add(username, password, role string) (UserView, error) {
 }
 
 func validTheme(theme string) bool {
-	return theme == "aurora" || theme == "midnight" || theme == "mint"
+	switch theme {
+	case "aurora", "midnight", "mint", "ocean", "violet", "sunset", "forest", "ruby", "sand", "mono":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *UserStore) setTheme(id, theme string) error {

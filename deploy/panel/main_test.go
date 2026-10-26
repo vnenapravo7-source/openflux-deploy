@@ -576,6 +576,25 @@ func TestRollbackAvailabilityRequiresBinaryAndRevision(t *testing.T) {
 	}
 }
 
+func TestCoreLineInfersCompletedTeamMigration(t *testing.T) {
+	dir := t.TempDir()
+	versionPath := filepath.Join(dir, "upstream-version")
+	if err := os.WriteFile(versionPath, []byte("5a46f2f1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "upstream-version-label"), []byte("v0.16.0 · 5a46f2f1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m := &Manager{versionPath: versionPath, connections: []Connection{}, processes: map[string]*processState{}, traffic: []TrafficPoint{}, latestTeam: "5a46f2f1"}
+	if got := m.coreLine(); got != "team" {
+		t.Fatalf("core line = %q, want team", got)
+	}
+	state := m.state(User{Role: "admin"})
+	if state["core_migration_available"] != false {
+		t.Fatalf("completed migration was offered again: %#v", state)
+	}
+}
+
 func TestRollbackRequiresUpdatedInstaller(t *testing.T) {
 	m := &Manager{}
 	if err := m.rollbackServer(); err == nil {

@@ -19,7 +19,7 @@ const duration = input => { const s=Number(input)||0,d=Math.floor(s/86400),h=Mat
 function toast(message,error=false){const el=$("#toast");el.textContent=message;el.className=error?"show error":"show";setTimeout(()=>el.className="",3500)}
 function showLogin(){state=null;pendingUpdatePrompt=false;shownUpdateSignature="";revealedKeys.clear();revealedShares.clear();$$(".connection-key code,.connection-share code").forEach(el=>el.textContent="");$$(".connection-share img").forEach(el=>el.removeAttribute("src"));$$(".connection-key,.connection-share").forEach(el=>el.classList.add("hidden"));$("#updateModal").classList.add("hidden");navigate("overview");$("#appShell").classList.add("hidden");$("#loginScreen").classList.remove("hidden");}
 function showApp(){ $("#loginScreen").classList.add("hidden");$("#appShell").classList.remove("hidden"); }
-function applyTheme(theme){const preset=["aurora","midnight","mint"].includes(theme)?theme:"aurora";document.documentElement.dataset.theme=preset;return preset}
+function applyTheme(theme){const preset=["aurora","midnight","mint","ocean","violet","sunset","forest","ruby","sand","mono"].includes(theme)?theme:"aurora";document.documentElement.dataset.theme=preset;return preset}
 function navigate(view){
   if(state?.me.role!=="admin"&&view==="users")view="overview";
   activeView=view;

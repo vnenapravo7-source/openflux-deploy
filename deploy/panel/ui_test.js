@@ -31,6 +31,10 @@ assert.match(render("[ok](https://example.com/?q=1&x=2)"), /href="https:\/\/exam
 const html = fs.readFileSync(path.join(__dirname, "static", "index.html"), "utf8");
 assert.match(html, /В Android тоже выберите «Session» с одним транспортом/);
 assert.match(html, /С обычным одиночным подключением этот режим несовместим/);
+assert.ok(html.indexOf('id="connectionEditor"') < html.indexOf('id="connectionsList"'), "connection editor must be above the connection list");
+for (const preset of ["aurora", "midnight", "mint", "ocean", "violet", "sunset", "forest", "ruby", "sand", "mono"]) {
+  assert.match(html, new RegExp(`option value="${preset}"`), `missing ${preset} theme preset`);
+}
 for (const [id, name] of [["instructionKind", "kind"], ["instructionMediaTitle", "title"], ["instructionFile", "file"]]) {
   assert.match(html, new RegExp(`id="${id}" name="${name}"`), `${id} must be included in FormData`);
 }

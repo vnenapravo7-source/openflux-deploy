@@ -1146,6 +1146,11 @@ func (m *Manager) coreLine() string {
 	if saved := revisionFromFile(filepath.Join(filepath.Dir(m.versionPath), "core-line")); saved == "p1" || saved == "team" {
 		return saved
 	}
+	// Older migration tooling did not persist core-line. A Team release label
+	// is still reliable and prevents a completed 0.16 migration being offered again.
+	if strings.HasPrefix(m.upstreamVersionLabel(), "v0.16.") {
+		return "team"
+	}
 	if env("OPENFLUX_CORE_LINE", "") == "team" || strings.Contains(env("OPENFLUX_UPSTREAM_REPO", ""), "OpenFluxTeam/OpenFlux") {
 		return "team"
 	}
@@ -1192,7 +1197,7 @@ func (m *Manager) state(user User) map[string]any {
 		}
 		state["latest_upstream"] = m.latestUpstream
 		state["latest_team"] = m.latestTeam
-		state["core_migration_available"] = m.coreLine() == "p1" && m.latestTeam != ""
+		state["core_migration_available"] = m.coreLine() == "p1" && m.latestTeam != "" && m.latestTeam != m.version()
 		state["latest_panel"] = m.latestPanel
 		state["version_check_error"] = m.versionCheckError
 		m.mu.Unlock()

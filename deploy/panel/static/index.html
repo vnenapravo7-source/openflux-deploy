@@ -75,7 +75,6 @@
             <div class="form-actions"><button type="submit" class="primary">Создать подключение</button></div>
           </form>
         </article>
-        <article class="card"><div class="card-head"><div><h2>Подключения</h2><p>Можно создать несколько подключений для одного пользователя</p></div></div><div id="connectionsList" class="connection-list"></div></article>
         <article id="connectionEditor" class="card form-card hidden"><div class="card-head"><div><h2 id="editorTitle">Новое подключение</h2><p>Транспорт и кодек должны совпадать с мобильным клиентом</p></div><button id="cancelConnection" class="secondary small" type="button">Закрыть</button></div>
           <form id="connectionForm">
             <label class="switch-row"><span><b>Запустить exit-ноду</b><small>При выключении настройки сохранятся</small></span><input id="enabled" type="checkbox"><i></i></label>
@@ -108,9 +107,10 @@
             <div class="form-actions"><span id="saveMessage"></span><button type="submit" class="primary">Сохранить и применить</button></div>
           </form>
         </article>
+        <article class="card"><div class="card-head"><div><h2>Подключения</h2><p>Можно создать несколько подключений для одного пользователя</p></div></div><div id="connectionsList" class="connection-list"></div></article>
       </section>
       <section id="view-account" class="view">
-        <article class="card form-card account-card"><div class="card-head"><div><h2>Оформление</h2><p>Выберите палитру панели — она сохранится для вашего аккаунта</p></div></div><label class="theme-picker"><span>Пресет оформления</span><select id="themePreset"><option value="aurora">Аврора · бирюзовый + фиолетовый</option><option value="midnight">Полночь · холодный синий</option><option value="mint">Мята · зелёный + синий</option></select><i class="theme-preview" aria-hidden="true"></i></label></article>
+        <article class="card form-card account-card"><div class="card-head"><div><h2>Оформление</h2><p>Выберите палитру панели — она сохранится для вашего аккаунта</p></div></div><label class="theme-picker"><span>Пресет оформления</span><select id="themePreset"><option value="aurora">Аврора · бирюзовый + фиолетовый</option><option value="midnight">Полночь · холодный синий</option><option value="mint">Мята · зелёный + синий</option><option value="ocean">Океан · лазурный + синий</option><option value="violet">Сирень · фиолетовый + розовый</option><option value="sunset">Закат · янтарный + коралловый</option><option value="forest">Лес · лайм + изумрудный</option><option value="ruby">Рубин · красный + фуксия</option><option value="sand">Песок · золотой + лиловый</option><option value="mono">Монохром · серебро + индиго</option></select><i class="theme-preview" aria-hidden="true"></i></label></article>
         <article class="card form-card"><div class="card-head"><div><h2>Сменить логин</h2><p>После изменения потребуется войти заново</p></div></div>
           <form id="usernameForm" class="account-form">
             <label><span>Новый логин</span><input id="accountUsername" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]+" autocomplete="username"></label>
