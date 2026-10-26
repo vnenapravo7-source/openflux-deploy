@@ -19,11 +19,10 @@
       <div class="brand"><span class="mark">OF</span><div><strong>OpenFlux</strong><small>Control plane</small></div></div>
       <nav>
         <button class="nav active" data-view="overview"><span class="nav-main"><span class="nav-icon">▦</span>Обзор</span></button>
-        <button class="nav" data-view="connections"><span class="nav-main"><span class="nav-icon">⌁</span>Подключения</span><span id="connectionCount" class="badge">0</span></button>
+        <button class="nav" data-view="connections"><span class="nav-main"><span class="nav-icon connection-icon">◈</span>Подключения</span><span id="connectionCount" class="badge">0</span></button>
         <button class="nav" data-view="instructions"><span class="nav-main"><span class="nav-icon">☷</span>Инструкции</span></button>
         <button class="nav" data-view="account"><span class="nav-main"><span class="nav-icon">◉</span>Мой профиль</span></button>
         <button class="nav admin-only" data-view="users"><span class="nav-main"><span class="nav-icon">♧</span>Пользователи</span></button>
-        <button class="nav admin-only" data-view="nodes"><span class="nav-main"><span class="nav-icon">◇</span>Ноды</span><span id="nodeCount" class="badge">0</span></button>
         <button class="nav" data-view="logs"><span class="nav-main"><span class="nav-icon">≡</span>Журнал</span></button>
       </nav>
       <div class="clients"><small>Мобильные клиенты</small>
@@ -47,7 +46,7 @@
         <article class="card chart-card admin-only"><div class="card-head"><div><h2>Сетевой трафик сервера</h2><p>Последние 10 минут, все интерфейсы кроме loopback</p></div><div class="legend"><span><i class="rx"></i>RX</span><span><i class="tx"></i>TX</span></div></div><canvas id="trafficChart" height="250"></canvas></article>
         <article class="card"><div class="card-head"><div><h2>Подключения</h2><p>Каждое запускается как отдельный процесс OpenFlux</p></div><button class="text-btn" data-goto="connections">Открыть все</button></div><div id="overviewConnections" class="connection-list"></div></article>
         <article class="card admin-only maintenance"><div class="card-head"><div><h2>Обслуживание</h2><p>Обновления не затрагивают пользователей и подключения</p><small id="versionCheckStatus" role="status">Версии ещё не проверены</small></div><button id="checkUpdatesBtn" class="secondary small">Проверить версии</button></div>
-          <div class="maintenance-row"><div><b>Серверная часть</b><small id="serverRepository">p1neappleXpress/OpenFlux · основной репозиторий</small><small id="serverVersionStatus"></small><small id="serverRollbackTarget"></small></div><div class="maintenance-actions"><button id="rollbackServerBtn" class="secondary small">Откатить сервер</button><button id="updateBtn" class="secondary small">Обновить сервер</button><button id="migrateCoreBtn" class="secondary small hidden">Перейти на Team 0.16</button></div></div>
+          <div class="maintenance-row"><div><b>Серверная часть</b><small id="serverRepository">p1neappleXpress/OpenFlux · основной репозиторий</small><small id="serverVersionStatus"></small><small id="serverRollbackTarget"></small></div><div class="maintenance-actions"><button id="rollbackServerBtn" class="secondary small">Откатить сервер</button><button id="updateBtn" class="secondary small">Обновить сервер</button></div></div>
           <label class="check"><input id="autoUpdate" type="checkbox"><span>Автоматически обновлять серверную часть</span></label>
           <div class="maintenance-row"><div><b>Веб-панель</b><small>vnenapravo7-source/openflux-deploy · после обновления потребуется повторный вход</small><small id="panelVersionStatus"></small><small id="panelRollbackTarget"></small></div><div class="maintenance-actions"><button id="rollbackPanelBtn" class="secondary small">Откатить панель</button><button id="updatePanelBtn" class="secondary small">Обновить панель</button></div></div>
           <small id="serverUpdateStatus" role="status"></small>
@@ -65,17 +64,18 @@
         </article>
       </section>
       <section id="view-connections" class="view">
-        <article class="card"><div class="card-head"><div><h2>Подключения</h2><p>Можно создать несколько подключений для одного пользователя</p></div></div><div id="connectionsList" class="connection-list"></div></article>
         <article id="quickMultiCard" class="card form-card hidden"><div class="card-head"><div><h2>Быстрое мульти-подключение</h2><p>Direct + Yandex Docs + Mail.ru Docs, готовый профиль для Android</p></div><button id="cancelQuickMulti" class="secondary small" type="button">Закрыть</button></div>
           <form id="quickMultiForm" class="quick-multi-form">
             <label><span>Название</span><input id="quickMultiName" required maxlength="80" placeholder="Например, Мой мульти-профиль"></label>
-            <label><span>Ссылка Yandex Docs</span><input id="quickMultiYandex" type="url" required placeholder="https://disk.yandex.ru/i/…" autocomplete="off"><small><a href="https://docs.360.yandex.ru/" target="_blank" rel="noopener noreferrer">Открыть Yandex Docs ↗</a><br><b>Снимите</b> галочку «Перейти на новый редактор». Ссылку возьмите через «Поделиться» в документе.</small></label>
-            <label><span>Ссылка Mail.ru Docs</span><input id="quickMultiMail" type="url" required placeholder="https://cloud.mail.ru/public/…" autocomplete="off"><small><a href="https://doc.mail.ru/" target="_blank" rel="noopener noreferrer">Открыть Mail.ru Docs ↗</a><br>Ссылку возьмите через «Поделиться» в документе.</small></label>
-            <div class="quick-multi-summary"><b>Параметры будут выставлены автоматически</b><small>L4 · Batched + zstd · контекст шифрования — Yandex Docs · Direct порт, ключ и MTU — автоматически</small><small>Приоритет: Direct 100 → Yandex Docs 75 → Mail.ru Docs 25</small></div>
+            <div class="quick-transport-grid"><label><span>Первый транспорт</span><select id="quickMultiFirstType"><option value="yandex">Yandex Docs</option><option value="vyandex">Yandex Volga</option><option value="boards">Yandex Board</option><option value="mailru">Mail.ru Docs</option><option value="cupsonline">Cups.online</option><option value="avito">Avito Code</option><option value="telemost">Yandex Telemost</option></select></label><label><span>Ссылка или код</span><input id="quickMultiFirstUrl" required placeholder="https://… или код комнат" autocomplete="off"></label></div>
+            <div class="quick-transport-grid"><label><span>Второй транспорт</span><select id="quickMultiSecondType"><option value="mailru">Mail.ru Docs</option><option value="yandex">Yandex Docs</option><option value="vyandex">Yandex Volga</option><option value="boards">Yandex Board</option><option value="cupsonline">Cups.online</option><option value="avito">Avito Code</option><option value="telemost">Yandex Telemost</option></select></label><label><span>Ссылка или код</span><input id="quickMultiSecondUrl" required placeholder="https://… или код комнат" autocomplete="off"></label></div>
+            <label class="check"><input id="quickMultiDirect" type="checkbox" checked><span>Добавить Direct TCP с максимальным приоритетом</span></label>
+            <div class="quick-multi-summary"><b>Параметры будут выставлены автоматически</b><small>L4 · Batched + zstd · ключ и MTU — автоматически. Ссылки или коды должны совпадать с профилем клиента.</small><small>Приоритеты: Direct 100, затем выбранные транспорты 75 и 25.</small></div>
             <div id="quickDirectSetupNotice" class="direct-setup-notice hidden"><strong>Для Direct в Docker сначала включите публикацию портов 39000–39015.</strong><button id="copyQuickDirectSetup" class="secondary small" type="button">Скопировать команду установки</button></div>
             <div class="form-actions"><button type="submit" class="primary">Создать подключение</button></div>
           </form>
         </article>
+        <article class="card"><div class="card-head"><div><h2>Подключения</h2><p>Можно создать несколько подключений для одного пользователя</p></div></div><div id="connectionsList" class="connection-list"></div></article>
         <article id="connectionEditor" class="card form-card hidden"><div class="card-head"><div><h2 id="editorTitle">Новое подключение</h2><p>Транспорт и кодек должны совпадать с мобильным клиентом</p></div><button id="cancelConnection" class="secondary small" type="button">Закрыть</button></div>
           <form id="connectionForm">
             <label class="switch-row"><span><b>Запустить exit-ноду</b><small>При выключении настройки сохранятся</small></span><input id="enabled" type="checkbox"><i></i></label>
@@ -110,6 +110,7 @@
         </article>
       </section>
       <section id="view-account" class="view">
+        <article class="card form-card account-card"><div class="card-head"><div><h2>Оформление</h2><p>Выберите палитру панели — она сохранится для вашего аккаунта</p></div></div><label class="theme-picker"><span>Пресет оформления</span><select id="themePreset"><option value="aurora">Аврора · бирюзовый + фиолетовый</option><option value="midnight">Полночь · холодный синий</option><option value="mint">Мята · зелёный + синий</option></select><i class="theme-preview" aria-hidden="true"></i></label></article>
         <article class="card form-card"><div class="card-head"><div><h2>Сменить логин</h2><p>После изменения потребуется войти заново</p></div></div>
           <form id="usernameForm" class="account-form">
             <label><span>Новый логин</span><input id="accountUsername" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]+" autocomplete="username"></label>
@@ -142,23 +143,6 @@
             <label><span>Роль</span><select id="userRole"><option value="user">Пользователь</option><option value="admin">Администратор</option></select></label>
             <div class="node-form-actions"><button class="primary" type="submit">Добавить пользователя</button></div>
           </form>
-        </article>
-      </section>
-      <section id="view-nodes" class="view admin-only">
-        <article class="card"><div class="card-head"><div><h2>Подключённые серверы</h2><p>Статус и управление удалёнными OpenFlux-нодами</p></div><button id="showAddNode" class="primary small">+ Добавить ноду</button></div>
-          <div class="node-status-notice"><b>Ноды пока в демонстрационном режиме.</b> Раздел отображает интерфейс; создание подключений на удалённых серверах и перенос между ними ещё не реализованы.</div>
-          <div class="node-install-guide">
-            <div class="node-guide-title"><span class="node-guide-icon">↗</span><div><b>Как добавить сервер</b><small>На втором VPS установите OpenFlux в режиме ноды. Установщик сам выберет Docker или systemd.</small></div></div>
-            <div class="node-install-command"><code id="nodeInstallCommand">sudo bash -c "$(wget -qO- https://raw.githubusercontent.com/vnenapravo7-source/openflux-deploy/main/deploy.sh)" -- --role node</code><button id="copyNodeInstallCommand" type="button" class="secondary small">Копировать</button></div>
-            <p>После установки скопируйте из консоли <b>URL</b>, <b>токен</b> и <b>SHA-256</b> сюда. Убедитесь, что порт панели ноды доступен с основного VPS. Токен никому не отправляйте.</p>
-          </div>
-          <form id="nodeForm" class="node-form hidden">
-            <label><span>Название</span><input id="nodeName" required placeholder="Амстердам 1"><small>Любая подпись, чтобы различать серверы в списке.</small></label>
-            <label><span>HTTPS-адрес</span><input id="nodeUrl" required type="url" placeholder="https://203.0.113.10:8088"><small>URL из вывода установщика. Используйте публичный адрес и порт ноды.</small></label>
-            <label><span>Токен ноды</span><input id="nodeToken" required type="password" autocomplete="new-password"><small>Скопируйте строку «Токен» из вывода установщика. Храните в секрете.</small></label>
-            <label><span>SHA-256 сертификата <em>для self-signed</em></span><input id="nodeFingerprint" placeholder="64 шестнадцатеричных символа"><small>Отпечаток из вывода установщика, без двоеточий. Для self-signed сертификата обязателен.</small></label>
-            <div class="node-form-actions"><button type="button" id="cancelNode" class="secondary">Отмена</button><button class="primary">Подключить</button></div>
-          </form><div id="nodesList" class="nodes-list"><div class="empty">Подключённых нод пока нет.</div></div>
         </article>
       </section>
       <section id="view-logs" class="view"><article class="card logs-card"><div class="card-head"><div><h2>Журнал подключения</h2><p>Записи других пользователей недоступны</p></div><div class="header-actions"><select id="logConnection"></select><button id="copyLogs" class="secondary small">Копировать</button></div></div><pre id="logs">Выберите подключение…</pre></article></section>

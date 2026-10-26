@@ -19,13 +19,14 @@ const duration = input => { const s=Number(input)||0,d=Math.floor(s/86400),h=Mat
 function toast(message,error=false){const el=$("#toast");el.textContent=message;el.className=error?"show error":"show";setTimeout(()=>el.className="",3500)}
 function showLogin(){state=null;pendingUpdatePrompt=false;shownUpdateSignature="";revealedKeys.clear();revealedShares.clear();$$(".connection-key code,.connection-share code").forEach(el=>el.textContent="");$$(".connection-share img").forEach(el=>el.removeAttribute("src"));$$(".connection-key,.connection-share").forEach(el=>el.classList.add("hidden"));$("#updateModal").classList.add("hidden");navigate("overview");$("#appShell").classList.add("hidden");$("#loginScreen").classList.remove("hidden");}
 function showApp(){ $("#loginScreen").classList.add("hidden");$("#appShell").classList.remove("hidden"); }
+function applyTheme(theme){const preset=["aurora","midnight","mint"].includes(theme)?theme:"aurora";document.documentElement.dataset.theme=preset;return preset}
 function navigate(view){
-  if(state?.me.role!=="admin"&&(view==="users"||view==="nodes"))view="overview";
+  if(state?.me.role!=="admin"&&view==="users")view="overview";
   activeView=view;
   $("#quickMultiTop").classList.toggle("hidden",view!=="connections");
   $$(".nav").forEach(el=>el.classList.toggle("active",el.dataset.view===view));
   $$(".view").forEach(el=>el.classList.toggle("active",el.id===`view-${view}`));
-  $("#pageTitle").textContent={overview:"Обзор",instructions:"Инструкции",connections:"Подключения",account:"Мой профиль",users:"Пользователи",nodes:"Ноды",logs:"Журнал"}[view];
+  $("#pageTitle").textContent={overview:"Обзор",instructions:"Инструкции",connections:"Подключения",account:"Мой профиль",users:"Пользователи",logs:"Журнал"}[view];
   if(view==="users")loadUsers();
   if(view==="instructions")loadInstructions();
   if(view==="overview"&&state?.me.role==="admin")drawChart(state.traffic||[]);
@@ -74,10 +75,6 @@ function renderConnections(){
   logSelect.innerHTML=connections.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");logSelect.value=selectedLog;
   const log=connections.find(c=>c.id===selectedLog);$("#logs").textContent=log?.logs?.length?log.logs.join("\n"):"Записей пока нет.";
 }
-function renderNodes(nodes=[]){
-  $("#nodeCount").textContent=nodes.length;
-  $("#nodesList").innerHTML=nodes.length?nodes.map(n=>`<div class="node ${n.online?'':'offline'}"><div class="node-name"><b>${esc(n.name)}</b><small>${esc(n.base_url)}</small></div><div class="node-metric"><span>Статус</span><b>${n.online?(n.running?'Есть активные подключения':'Онлайн · без подключений'):'Нет связи'}</b></div><div class="node-metric"><span>Подключений</span><b>${n.connections||0}</b></div><div class="node-metric"><span>Трафик</span><b>↓ ${bytes(n.rx)} · ↑ ${bytes(n.tx)}</b></div><div class="node-actions"><button data-node-action="restart" data-id="${esc(n.id)}" title="Перезапустить">↻</button><button data-node-action="update" data-id="${esc(n.id)}" title="Обновить">⇣</button><button data-node-action="delete" data-id="${esc(n.id)}" title="Удалить">×</button></div>${n.error?`<small>${esc(n.error)}</small>`:""}</div>`).join(""):'<div class="empty">Подключённых нод пока нет.</div>';
-}
 function renderUsers(){
   $("#usersList").innerHTML=users.map(u=>`<div class="user-row"><div><b>${esc(u.username)}</b><small>${u.role==="admin"?"Администратор":"Пользователь"} · ${state.connections.filter(c=>c.owner_id===u.id).length} подключений</small></div><div class="header-actions">${u.id===state.me.id?`<button class="secondary small" data-user-action="self" data-id="${esc(u.id)}">Мой профиль</button>`:`<button class="secondary small" data-user-action="username" data-id="${esc(u.id)}">Изменить логин</button><button class="secondary small" data-user-action="password" data-id="${esc(u.id)}">Сменить пароль</button><button class="danger small" data-user-action="delete" data-id="${esc(u.id)}">Удалить</button>`}</div></div>`).join("");
   $("#connectionOwner").innerHTML=users.map(u=>`<option value="${esc(u.id)}">${esc(u.username)}</option>`).join("");
@@ -116,6 +113,7 @@ function openUserEditor(user,action){
 }
 function render(){
   showApp();const admin=state.me.role==="admin",connections=state.connections||[],running=connections.filter(c=>c.running).length;
+  const theme=applyTheme(state.me.theme);$("#themePreset").value=theme;
   $$(".admin-only").forEach(el=>el.classList.toggle("hidden",!admin));
   $("#accountLabel").textContent=`${state.me.username} · ${admin?"АДМИНИСТРАТОР":"ПОЛЬЗОВАТЕЛЬ"}`;
   if(!$("#usernameForm").dataset.dirty)$("#accountUsername").value=state.me.username;
@@ -135,11 +133,10 @@ function render(){
     const panelNew=!!state.latest_panel&&state.latest_panel!==state.panel_revision;
     const serverFix=!!state.server_patch_pending,serverUpdate=serverNew||serverFix,coreMigration=!!state.core_migration_available;
     $("#serverRepository").textContent=state.upstream_core==="team"?"OpenFluxTeam/OpenFlux · линия Team":"p1neappleXpress/OpenFlux · линия p1";
-    $("#updateBtn").disabled=busy||!!state.checking_versions||!serverUpdate;
-    $("#updateBtn").textContent=serverFix&&!serverNew?"Исправить Board":"Обновить сервер";
-    $("#migrateCoreBtn").classList.toggle("hidden",!coreMigration);$("#migrateCoreBtn").disabled=busy||!!state.checking_versions;
+    $("#updateBtn").disabled=busy||!!state.checking_versions||(!serverUpdate&&!coreMigration);
+    $("#updateBtn").textContent=coreMigration?"Обновить до Team 0.16":serverFix&&!serverNew?"Исправить Board":"Обновить сервер";
     $("#updatePanelBtn").disabled=busy||!!state.checking_versions||!panelNew;
-    $("#serverVersionStatus").textContent=coreMigration?`Доступен переход на OpenFluxTeam v0.16 · ${state.latest_team.slice(0,8)}`:serverFix?"Доступно исправление Board (HTTP 415)":state.latest_upstream?`OpenFlux ${state.upstream_core==="team"?"Team":"p1"} · ${state.latest_upstream.slice(0,8)}${serverNew?" · доступно обновление":" · актуально"}`:"";
+    $("#serverVersionStatus").textContent=coreMigration?`Доступно обновление до OpenFluxTeam v0.16 · ${state.latest_team.slice(0,8)}`:serverFix?"Доступно исправление Board (HTTP 415)":state.latest_upstream?`OpenFlux ${state.upstream_core==="team"?"Team":"p1"} · ${state.latest_upstream.slice(0,8)}${serverNew?" · доступно обновление":" · актуально"}`:"";
     $("#panelVersionStatus").textContent=state.latest_panel?`Панель ${state.panel_version||"—"}${panelNew?" · доступно обновление":" · актуально"}`:"";
     $("#serverRollbackTarget").textContent=state.previous_server_revision&&state.previous_server_revision!=="unknown"?`Резервная версия: ${state.previous_server_revision.slice(0,8)}${state.previous_server_revision===state.upstream_version?" · совпадает с текущей":""}`:"Резервной версии пока нет";
     $("#panelRollbackTarget").textContent=state.previous_panel_revision&&state.previous_panel_revision!=="unknown"?`Резервная версия: ${state.previous_panel_revision.slice(0,8)}${state.previous_panel_revision===state.panel_revision?" · совпадает с текущей":""}`:"Резервной версии пока нет";
@@ -151,7 +148,7 @@ function render(){
     const serverUpdateLog=$("#serverUpdateLog");serverUpdateLog.textContent=state.server_update_log||"";serverUpdateLog.classList.toggle("hidden",!state.server_update_log);
     $("#panelUpdateStatus").textContent=state.panel_update_error||(state.updating_panel?(state.panel_action==="rollback"?"Откатываем панель; она будет перезапущена…":"Панель обновляется; ход работы показан ниже…"):"");
     const updateLog=$("#panelUpdateLog");updateLog.textContent=state.panel_update_log||"";updateLog.classList.toggle("hidden",!state.panel_update_log);
-    drawChart(state.traffic||[]);renderNodes(state.nodes||[]);maybeOfferUpdates(serverUpdate,panelNew)
+    drawChart(state.traffic||[]);maybeOfferUpdates(serverUpdate||coreMigration,panelNew)
   }
   else $("#updateNotice").classList.add("hidden");
   renderConnections();if(activeView==="users")renderUsers();
@@ -178,16 +175,17 @@ function openConnection(c){
   $("#localIp").value=c?.local_ip||"";$("#encryptionKey").value=c?.key_managed?"":c?.encryption_key_file||"";$("#debug").checked=c?.debug??true;
   $("#sessionMode").checked=!!c?.transports?.length;$("#sessionTransportRows").replaceChildren();(c?.transports?.length?c.transports:[{type:c?.transport||"yandex",url:c?.url||"",priority:100}]).forEach(addSessionRow);$("#sessionContextUrl").value=c?.session_context_url||"";$("#directListen").value=c?.direct_listen||"";$("#legacyDirectListen").value=c?.direct_listen||"";$("#maxPacketSize").value=c?.max_packet_size||"";
   if(state.me.role==="admin")$("#connectionOwner").value=c?.owner_id||state.me.id;
-  $("#connectionOwner").disabled=!!c;sessionChanged();$("#connectionEditor").classList.remove("hidden");navigate("connections");$("#connectionEditor").scrollIntoView({behavior:"smooth"});
+  $("#connectionOwner").disabled=!!c;sessionChanged();$("#connectionEditor").classList.remove("hidden");navigate("connections");$("#connectionEditor").scrollIntoView({behavior:"smooth",block:"start"});
 }
 $("#newConnectionTop").onclick=()=>{$("#quickMultiCard").classList.add("hidden");openConnection()};
-$("#quickMultiTop").onclick=()=>{$("#connectionEditor").classList.add("hidden");$("#quickMultiForm").reset();$("#quickDirectSetupNotice").classList.toggle("hidden",state?.direct_ports_ready!==false);$("#quickMultiCard").classList.remove("hidden");navigate("connections");$("#quickMultiCard").scrollIntoView({behavior:"smooth"})};
+$("#quickMultiTop").onclick=()=>{$("#connectionEditor").classList.add("hidden");$("#quickMultiForm").reset();$("#quickMultiDirect").checked=true;$("#quickDirectSetupNotice").classList.toggle("hidden",state?.direct_ports_ready!==false);$("#quickMultiCard").classList.remove("hidden");navigate("connections");$("#quickMultiCard").scrollIntoView({behavior:"smooth",block:"start"})};
 $("#cancelQuickMulti").onclick=()=>$("#quickMultiCard").classList.add("hidden");
 $("#cancelConnection").onclick=()=>$("#connectionEditor").classList.add("hidden");
 $("#quickMultiForm").onsubmit=async event=>{
   event.preventDefault();
   const form=event.target,submit=form.querySelector('[type="submit"]');submit.disabled=true;
-  const c={name:$("#quickMultiName").value.trim(),owner_id:state.me.id,enabled:true,transport:"yandex",url:"",mode:"l4",codec:"batched",local_ip:"",encryption_key_file:"",negotiate:false,transports:[{type:"direct",priority:100,url:""},{type:"yandex",priority:75,url:$("#quickMultiYandex").value.trim()},{type:"mailru",priority:25,url:$("#quickMultiMail").value.trim()}],session_context_url:"",direct_listen:"",max_packet_size:0,debug:true};
+  const links=[];if($("#quickMultiDirect").checked)links.push({type:"direct",priority:100,url:""});links.push({type:$("#quickMultiFirstType").value,priority:75,url:$("#quickMultiFirstUrl").value.trim()},{type:$("#quickMultiSecondType").value,priority:25,url:$("#quickMultiSecondUrl").value.trim()});
+  const c={name:$("#quickMultiName").value.trim(),owner_id:state.me.id,enabled:true,transport:"yandex",url:"",mode:"l4",codec:"batched",local_ip:"",encryption_key_file:"",negotiate:false,transports:links,session_context_url:"",direct_listen:"",max_packet_size:0,debug:true};
   try{await api("/api/connections",{method:"POST",...json(c)});form.reset();$("#quickMultiCard").classList.add("hidden");toast("Мульти-подключение создано");await refresh()}
   catch(e){toast(e.message,true)}finally{submit.disabled=false}
 };
@@ -196,8 +194,8 @@ $("#connectionForm").onsubmit=async event=>{
   try{await api(editing?`/api/connections/${editing}`:"/api/connections",{method:editing?"PUT":"POST",...json(c)});$("#connectionEditor").classList.add("hidden");toast("Подключение сохранено");await refresh();}catch(e){toast(e.message,true)}
 };
 document.addEventListener("click",async event=>{
-  const button=event.target.closest("[data-connection-action], [data-node-action], [data-user-action]");if(!button)return;
-  const id=button.dataset.id,action=button.dataset.connectionAction||button.dataset.nodeAction||button.dataset.userAction;
+  const button=event.target.closest("[data-connection-action], [data-user-action]");if(!button)return;
+  const id=button.dataset.id,action=button.dataset.connectionAction||button.dataset.userAction;
   try{
     if(button.dataset.connectionAction){const c=state.connections.find(item=>item.id===id);if(!c)return;
       if(action==="edit")return openConnection(c);
@@ -223,7 +221,6 @@ document.addEventListener("click",async event=>{
       if(action==="delete"&&!confirm(`Удалить подключение «${c.name}»?`))return;
       await api(`/api/connections/${id}${action==="restart"?"/restart":""}`,{method:action==="delete"?"DELETE":"POST"});toast(action==="delete"?"Подключение удалено":"Подключение перезапущено");return refresh();
     }
-    if(button.dataset.nodeAction){if(action==="delete"&&!confirm("Удалить ноду из панели? На сервере ничего не изменится."))return;await api(`/api/nodes/${id}${action==="delete"?"":`/${action}`}`,{method:action==="delete"?"DELETE":"POST"});toast(action==="delete"?"Нода удалена":"Команда отправлена");return refresh()}
     if(button.dataset.userAction){const user=users.find(u=>u.id===id);if(!user)return;
       if(action==="self")return navigate("account");
       if(action==="username"||action==="password")return openUserEditor(user,action);
@@ -250,9 +247,9 @@ $("#editUserForm").onsubmit=async event=>{event.preventDefault();if(!editingUser
 $("#usernameForm").addEventListener("input",()=>$("#usernameForm").dataset.dirty="1");
 $("#usernameForm").onsubmit=async event=>{event.preventDefault();const username=$("#accountUsername").value.trim();try{await api(`/api/users/${state.me.id}/username`,{method:"PUT",...json({username,current_password:$("#usernameCurrentPassword").value})});event.target.reset();delete event.target.dataset.dirty;showLogin();$("#loginName").value=username;toast("Логин изменён. Войдите снова.")}catch(e){toast(e.message,true)}};
 $("#passwordForm").onsubmit=async event=>{event.preventDefault();const password=$("#passwordNew").value;if(password!==$("#passwordConfirm").value){toast("Новые пароли не совпадают",true);return}try{await api(`/api/users/${state.me.id}/password`,{method:"PUT",...json({password,current_password:$("#passwordCurrent").value})});event.target.reset();showLogin();toast("Пароль изменён. Войдите снова.")}catch(e){toast(e.message,true)}};
+$("#themePreset").onchange=async event=>{const previous=state?.me?.theme||"aurora",theme=applyTheme(event.target.value);try{await api("/api/preferences",{method:"PUT",...json({theme})});state.me.theme=theme;toast("Оформление сохранено")}catch(e){applyTheme(previous);event.target.value=previous;toast(e.message,true)}};
 $("#autoUpdate").onchange=async event=>{try{await api("/api/settings",{method:"PUT",...json({auto_update:event.target.checked})});toast("Настройка обновления сохранена")}catch(e){event.target.checked=!event.target.checked;toast(e.message,true)}};
-$("#updateBtn").onclick=async()=>{try{await api("/api/update",{method:"POST"});toast("Обновление запущено");await refresh()}catch(e){toast(e.message,true)}};
-$("#migrateCoreBtn").onclick=async()=>{if(!confirm("Перейти на OpenFluxTeam 0.16? Все подключения будут перезапущены. Старое ядро сохранится для отката."))return;try{await api("/api/migrate-core",{method:"POST"});toast("Переход на OpenFluxTeam запущен");await refresh()}catch(e){toast(e.message,true)}};
+$("#updateBtn").onclick=async()=>{const migration=!!state?.core_migration_available;if(migration&&!confirm("Обновить до OpenFluxTeam 0.16? Все подключения будут перезапущены. Старое ядро сохранится для отката."))return;try{await api(migration?"/api/migrate-core":"/api/update",{method:"POST"});toast(migration?"Обновление до OpenFluxTeam запущено":"Обновление запущено");await refresh()}catch(e){toast(e.message,true)}};
 $("#updatePanelBtn").onclick=async()=>{try{await api("/api/update-panel",{method:"POST"});toast("Обновление панели запущено. После перезапуска войдите снова.");await refresh()}catch(e){toast(e.message,true)}};
 $("#rollbackServerBtn").onclick=async()=>{if(!confirm("Откатить серверную часть на предыдущую версию? Автообновление будет выключено."))return;try{await api("/api/rollback-server",{method:"POST"});toast("Откат сервера запущен");await refresh()}catch(e){toast(e.message,true)}};
 $("#rollbackPanelBtn").onclick=async()=>{if(!confirm("Откатить панель на предыдущую версию? После перезапуска потребуется повторный вход."))return;try{await api("/api/rollback-panel",{method:"POST"});toast("Откат панели запущен");await refresh()}catch(e){toast(e.message,true)}};
@@ -262,8 +259,5 @@ $("#dismissUpdateModal").onclick=dismissUpdateModal;
 $("#modalServerUpdate").onclick=()=>{dismissUpdateModal();$("#updateBtn").click()};
 $("#modalPanelUpdate").onclick=()=>{dismissUpdateModal();$("#updatePanelBtn").click()};
 $("#offerServerUpdate").onclick=()=>$("#updateBtn").click();$("#offerPanelUpdate").onclick=()=>$("#updatePanelBtn").click();
-$("#showAddNode").onclick=()=>$("#nodeForm").classList.remove("hidden");$("#cancelNode").onclick=()=>$("#nodeForm").classList.add("hidden");
-$("#copyNodeInstallCommand").onclick=async()=>{try{await navigator.clipboard.writeText($("#nodeInstallCommand").textContent);toast("Команда установки ноды скопирована")}catch(e){toast("Не удалось скопировать команду: "+e.message,true)}};
-$("#nodeForm").onsubmit=async event=>{event.preventDefault();try{await api("/api/nodes",{method:"POST",...json({name:$("#nodeName").value.trim(),base_url:$("#nodeUrl").value.trim(),token:$("#nodeToken").value,tls_sha256:$("#nodeFingerprint").value.trim()})});event.target.reset();event.target.classList.add("hidden");toast("Нода подключена");await refresh()}catch(e){toast(e.message,true)}};
 addEventListener("resize",()=>state?.me.role==="admin"&&drawChart(state.traffic||[]));
 refresh().then(()=>{if(state?.me.role==="admin"){loadUsers();pendingUpdatePrompt=true;checkUpdates(true)}});setInterval(()=>{if(state)refresh()},5000);

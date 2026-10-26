@@ -22,12 +22,14 @@ type User struct {
 	Username     string `json:"username"`
 	Role         string `json:"role"`
 	PasswordHash string `json:"password_hash"`
+	Theme        string `json:"theme,omitempty"`
 }
 
 type UserView struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
 	Role     string `json:"role"`
+	Theme    string `json:"theme,omitempty"`
 }
 
 type UserStore struct {
@@ -197,7 +199,7 @@ func (s *UserStore) list() []UserView {
 	defer s.mu.Unlock()
 	out := make([]UserView, 0, len(s.users))
 	for _, u := range s.users {
-		out = append(out, UserView{u.ID, u.Username, u.Role})
+		out = append(out, UserView{ID: u.ID, Username: u.Username, Role: u.Role, Theme: u.Theme})
 	}
 	return out
 }
@@ -233,7 +235,31 @@ func (s *UserStore) add(username, password, role string) (UserView, error) {
 		return UserView{}, err
 	}
 	s.users = next
-	return UserView{id, username, role}, nil
+	return UserView{ID: id, Username: username, Role: role}, nil
+}
+
+func validTheme(theme string) bool {
+	return theme == "aurora" || theme == "midnight" || theme == "mint"
+}
+
+func (s *UserStore) setTheme(id, theme string) error {
+	if !validTheme(theme) {
+		return fmt.Errorf("unknown theme")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := append([]User(nil), s.users...)
+	for i := range next {
+		if next[i].ID == id {
+			next[i].Theme = theme
+			if err := writeJSONFile(s.path, next); err != nil {
+				return err
+			}
+			s.users = next
+			return nil
+		}
+	}
+	return os.ErrNotExist
 }
 
 func (s *UserStore) changePassword(id, password string) error {

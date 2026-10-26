@@ -480,7 +480,7 @@ func TestConnectionIsolationAndCupsCode(t *testing.T) {
 
 func TestStateRequiresSessionAndHidesOtherConnections(t *testing.T) {
 	owner, other := User{ID: "owner", Username: "owner", Role: "user"}, User{ID: "other", Username: "other", Role: "user"}
-	m := &Manager{connections: []Connection{{ID: "one", OwnerID: owner.ID, Name: "private", Config: defaults()}, {ID: "two", OwnerID: other.ID, Name: "hidden", Config: defaults()}}, processes: map[string]*processState{"one": {}, "two": {}}, nodes: []Node{}, traffic: []TrafficPoint{}}
+	m := &Manager{connections: []Connection{{ID: "one", OwnerID: owner.ID, Name: "private", Config: defaults()}, {ID: "two", OwnerID: other.ID, Name: "hidden", Config: defaults()}}, processes: map[string]*processState{"one": {}, "two": {}}, traffic: []TrafficPoint{}}
 	s := &server{mgr: m, users: &UserStore{users: []User{owner, other}}, sessions: map[string]session{"valid": {userID: owner.ID, expires: time.Now().Add(time.Hour)}}, attempts: map[string]loginAttempt{}}
 	handler := s.auth(http.HandlerFunc(s.api))
 	unauthorized := httptest.NewRecorder()
@@ -497,12 +497,11 @@ func TestStateRequiresSessionAndHidesOtherConnections(t *testing.T) {
 	}
 	var result struct {
 		Connections []ConnectionView `json:"connections"`
-		Nodes       json.RawMessage  `json:"nodes"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Connections) != 1 || result.Connections[0].ID != "one" || result.Nodes != nil {
+	if len(result.Connections) != 1 || result.Connections[0].ID != "one" {
 		t.Fatalf("unfiltered response: %s", response.Body.String())
 	}
 	otherRestart := httptest.NewRequest(http.MethodPost, "/api/connections/two/restart", nil)
@@ -595,22 +594,11 @@ func TestLegacyConnectionMigration(t *testing.T) {
 	if err := writeJSONFile(legacy, old); err != nil {
 		t.Fatal(err)
 	}
-	m, err := NewManager(legacy, connections, filepath.Join(dir, "nodes.json"), "missing-binary", filepath.Join(dir, "version"), "missing-updater", "admin-id")
+	m, err := NewManager(legacy, connections, "missing-binary", filepath.Join(dir, "version"), "missing-updater", "admin-id")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(m.connections) != 1 || m.connections[0].OwnerID != "admin-id" || m.connections[0].URL != old.URL {
 		t.Fatalf("migration: %+v", m.connections)
-	}
-}
-
-func TestValidateNode(t *testing.T) {
-	n := Node{Name: "edge-1", BaseURL: "https://node.example:8088", Token: strings.Repeat("a", 32), TLSSHA256: strings.Repeat("ab", 32)}
-	if err := validateNode(n); err != nil {
-		t.Fatal(err)
-	}
-	n.BaseURL = "http://node.example:8088"
-	if err := validateNode(n); err == nil {
-		t.Fatal("expected HTTPS validation error")
 	}
 }

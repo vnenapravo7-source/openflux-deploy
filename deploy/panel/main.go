@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -20,7 +19,7 @@ import (
 	"time"
 )
 
-const panelVersion = "0.7.0"
+const panelVersion = "0.7.1"
 
 //go:embed static/*
 var staticFiles embed.FS
@@ -39,7 +38,6 @@ type server struct {
 	mgr           *Manager
 	users         *UserStore
 	instructions  *InstructionStore
-	nodeToken     string
 	secureCookies bool
 	mu            sync.Mutex
 	sessions      map[string]session
@@ -121,21 +119,12 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	s.sessions[token] = session{userID: u.ID, expires: time.Now().Add(24 * time.Hour)}
 	s.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: "of_session", Value: token, Path: "/", HttpOnly: true, Secure: s.secureCookies, SameSite: http.SameSiteStrictMode, MaxAge: 86400})
-	writeJSON(w, http.StatusOK, map[string]any{"me": UserView{u.ID, u.Username, u.Role}})
+	writeJSON(w, http.StatusOK, map[string]any{"me": UserView{ID: u.ID, Username: u.Username, Role: u.Role, Theme: u.Theme}})
 }
 
 func (s *server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" || r.URL.Path == "/api/login" || !strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, "/node/v1/") {
-			next.ServeHTTP(w, r)
-			return
-		}
-		if strings.HasPrefix(r.URL.Path, "/node/v1/") {
-			provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if s.nodeToken == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(s.nodeToken)) != 1 {
-				apiError(w, http.StatusUnauthorized, "invalid node token")
-				return
-			}
+		if r.URL.Path == "/healthz" || r.URL.Path == "/api/login" || !strings.HasPrefix(r.URL.Path, "/api/") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -410,53 +399,6 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.NotFound(w, r)
-	case r.Method == http.MethodGet && path == "/api/nodes":
-		if !requireAdmin(w, u) {
-			return
-		}
-		writeJSON(w, http.StatusOK, s.mgr.nodeViews())
-	case r.Method == http.MethodPost && path == "/api/nodes":
-		if !requireAdmin(w, u) || !requireAction(w, r) {
-			return
-		}
-		var n Node
-		if err := decodeBody(w, r, &n); err != nil {
-			apiError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if err := s.mgr.addNode(n); err != nil {
-			apiError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusCreated, map[string]bool{"ok": true})
-	case strings.HasPrefix(path, "/api/nodes/"):
-		if !requireAdmin(w, u) || !requireAction(w, r) {
-			return
-		}
-		parts := strings.Split(strings.TrimPrefix(path, "/api/nodes/"), "/")
-		if len(parts) == 1 && r.Method == http.MethodDelete {
-			if err := s.mgr.deleteNode(parts[0]); err != nil {
-				apiError(w, http.StatusNotFound, "node not found")
-				return
-			}
-			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-			return
-		}
-		if len(parts) == 2 && r.Method == http.MethodPost && (parts[1] == "restart" || parts[1] == "update") {
-			for _, n := range s.mgr.nodesSnapshot() {
-				if n.ID == parts[0] {
-					if err := callNode(n, http.MethodPost, "/node/v1/"+parts[1], nil); err != nil {
-						apiError(w, http.StatusBadGateway, err.Error())
-						return
-					}
-					writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
-					return
-				}
-			}
-			apiError(w, http.StatusNotFound, "node not found")
-			return
-		}
-		http.NotFound(w, r)
 	case r.Method == http.MethodPut && path == "/api/settings":
 		if !requireAdmin(w, u) || !requireAction(w, r) {
 			return
@@ -470,6 +412,22 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := s.mgr.setAutoUpdate(input.AutoUpdate); err != nil {
 			apiError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	case r.Method == http.MethodPut && path == "/api/preferences":
+		if !requireAction(w, r) {
+			return
+		}
+		var input struct {
+			Theme string `json:"theme"`
+		}
+		if err := decodeBody(w, r, &input); err != nil {
+			apiError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := s.users.setTheme(u.ID, input.Theme); err != nil {
+			apiError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -529,27 +487,6 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) nodeAPI(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet && r.URL.Path == "/node/v1/state" {
-		writeJSON(w, http.StatusOK, s.mgr.nodeState())
-		return
-	}
-	if r.Method == http.MethodPost && actionAllowed(r) && r.URL.Path == "/node/v1/restart" {
-		s.mgr.restartAll()
-		writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
-		return
-	}
-	if r.Method == http.MethodPost && actionAllowed(r) && r.URL.Path == "/node/v1/update" {
-		if err := s.mgr.update(); err != nil {
-			apiError(w, http.StatusConflict, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
-		return
-	}
-	http.NotFound(w, r)
-}
-
 func env(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {
 		return value
@@ -571,7 +508,6 @@ func main() {
 	mgr, err := NewManager(
 		env("OPENFLUX_CONFIG", "/etc/openflux-deploy/config.json"),
 		env("OPENFLUX_CONNECTIONS", "/etc/openflux-deploy/connections.json"),
-		env("OPENFLUX_NODES", "/etc/openflux-deploy/nodes.json"),
 		env("OPENFLUX_BINARY", "/var/lib/openflux-deploy/bin/openflux"),
 		env("OPENFLUX_VERSION_FILE", "/var/lib/openflux-deploy/upstream-version"),
 		env("OPENFLUX_UPDATE_SCRIPT", "/usr/local/lib/openflux-deploy/update.sh"), users.adminID())
@@ -594,12 +530,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	srv := &server{mgr: mgr, users: users, instructions: instructions, nodeToken: os.Getenv("OPENFLUX_NODE_TOKEN"), secureCookies: os.Getenv("OPENFLUX_TLS_CERT") != "" && os.Getenv("OPENFLUX_TLS_KEY") != "", sessions: map[string]session{}, attempts: map[string]loginAttempt{}}
+	srv := &server{mgr: mgr, users: users, instructions: instructions, secureCookies: os.Getenv("OPENFLUX_TLS_CERT") != "" && os.Getenv("OPENFLUX_TLS_KEY") != "", sessions: map[string]session{}, attempts: map[string]loginAttempt{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusOK, mgr.health()) })
 	mux.HandleFunc("/api/login", srv.login)
 	mux.HandleFunc("/api/", srv.api)
-	mux.HandleFunc("/node/v1/", srv.nodeAPI)
 	staticHandler := http.FileServer(http.FS(web))
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")

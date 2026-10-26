@@ -19,12 +19,10 @@ services:
     environment:
       OPENFLUX_ADMIN_USER: ${OPENFLUX_ADMIN_USER:-admin}
       OPENFLUX_ADMIN_PASSWORD: ${OPENFLUX_ADMIN_PASSWORD:?set in .env}
-      OPENFLUX_NODE_TOKEN: ${OPENFLUX_NODE_TOKEN:?set in .env}
       OPENFLUX_LISTEN: :${OPENFLUX_PORT:-8088}
       OPENFLUX_CONFIG: /etc/openflux-deploy/config.json
       OPENFLUX_USERS: /etc/openflux-deploy/users.json
       OPENFLUX_CONNECTIONS: /etc/openflux-deploy/connections.json
-      OPENFLUX_NODES: /etc/openflux-deploy/nodes.json
       OPENFLUX_INSTRUCTIONS: /etc/openflux-deploy/instructions.json
       OPENFLUX_INSTRUCTION_ASSETS: /var/lib/openflux-deploy/instruction-assets
       OPENFLUX_TLS_CERT: /etc/openflux-deploy/tls/cert.pem
