@@ -482,6 +482,15 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
+	case r.Method == http.MethodPost && path == "/api/migrate-core":
+		if !requireAdmin(w, u) || !requireAction(w, r) {
+			return
+		}
+		if err := s.mgr.migrateToTeam(); err != nil {
+			apiError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
 	case r.Method == http.MethodPost && path == "/api/rollback-server":
 		if !requireAdmin(w, u) || !requireAction(w, r) {
 			return

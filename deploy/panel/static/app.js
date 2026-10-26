@@ -133,11 +133,13 @@ function render(){
     $("#versionCheckStatus").textContent=state.checking_versions?"Проверяю версии сервера и панели…":state.version_check_error?`Ошибка проверки: ${state.version_check_error}`:state.last_version_check?`Проверено: ${new Date(state.last_version_check).toLocaleString("ru-RU")}. ${state.latest_upstream&&state.latest_panel?"Результаты ниже.":"Не удалось получить все версии."}`:"Версии ещё не проверены";
     const serverNew=!!state.latest_upstream&&state.latest_upstream!==state.upstream_version;
     const panelNew=!!state.latest_panel&&state.latest_panel!==state.panel_revision;
-    const serverFix=!!state.server_patch_pending,serverUpdate=serverNew||serverFix;
+    const serverFix=!!state.server_patch_pending,serverUpdate=serverNew||serverFix,coreMigration=!!state.core_migration_available;
+    $("#serverRepository").textContent=state.upstream_core==="team"?"OpenFluxTeam/OpenFlux · линия Team":"p1neappleXpress/OpenFlux · линия p1";
     $("#updateBtn").disabled=busy||!!state.checking_versions||!serverUpdate;
     $("#updateBtn").textContent=serverFix&&!serverNew?"Исправить Board":"Обновить сервер";
+    $("#migrateCoreBtn").classList.toggle("hidden",!coreMigration);$("#migrateCoreBtn").disabled=busy||!!state.checking_versions;
     $("#updatePanelBtn").disabled=busy||!!state.checking_versions||!panelNew;
-    $("#serverVersionStatus").textContent=serverFix?"Доступно исправление Board (HTTP 415)":state.latest_upstream?`OpenFlux main · ${state.latest_upstream.slice(0,8)}${serverNew?" · доступно обновление":" · актуально"}`:"";
+    $("#serverVersionStatus").textContent=coreMigration?`Доступен переход на OpenFluxTeam v0.16 · ${state.latest_team.slice(0,8)}`:serverFix?"Доступно исправление Board (HTTP 415)":state.latest_upstream?`OpenFlux ${state.upstream_core==="team"?"Team":"p1"} · ${state.latest_upstream.slice(0,8)}${serverNew?" · доступно обновление":" · актуально"}`:"";
     $("#panelVersionStatus").textContent=state.latest_panel?`Панель ${state.panel_version||"—"}${panelNew?" · доступно обновление":" · актуально"}`:"";
     $("#serverRollbackTarget").textContent=state.previous_server_revision&&state.previous_server_revision!=="unknown"?`Резервная версия: ${state.previous_server_revision.slice(0,8)}${state.previous_server_revision===state.upstream_version?" · совпадает с текущей":""}`:"Резервной версии пока нет";
     $("#panelRollbackTarget").textContent=state.previous_panel_revision&&state.previous_panel_revision!=="unknown"?`Резервная версия: ${state.previous_panel_revision.slice(0,8)}${state.previous_panel_revision===state.panel_revision?" · совпадает с текущей":""}`:"Резервной версии пока нет";
@@ -145,7 +147,7 @@ function render(){
     $("#updateNoticeText").textContent=serverUpdate&&panelNew?"Для сервера и панели доступны обновления.":serverFix&&!serverNew?"Доступно исправление Yandex Board.":serverNew?"Доступна новая версия сервера.":"Доступна новая версия панели.";
     $("#offerServerUpdate").classList.toggle("hidden",!serverUpdate);$("#offerPanelUpdate").classList.toggle("hidden",!panelNew);
     $("#offerServerUpdate").disabled=busy||!!state.checking_versions;$("#offerPanelUpdate").disabled=busy||!!state.checking_versions;
-    $("#serverUpdateStatus").textContent=state.update_error||(state.updating?(state.server_action==="rollback"?"Откатываем серверную часть…":"Обновляем серверную часть…"):(state.server_action==="rollback"?"Откат завершён; автообновление сервера выключено.":state.version_check_error||""));
+    $("#serverUpdateStatus").textContent=state.update_error||(state.updating?(state.server_action==="rollback"?"Откатываем серверную часть…":state.server_action==="migrate"?"Переводим сервер на OpenFluxTeam; подключения будут перезапущены…":"Обновляем серверную часть…"):(state.server_action==="rollback"?"Откат завершён; автообновление сервера выключено.":state.version_check_error||""));
     const serverUpdateLog=$("#serverUpdateLog");serverUpdateLog.textContent=state.server_update_log||"";serverUpdateLog.classList.toggle("hidden",!state.server_update_log);
     $("#panelUpdateStatus").textContent=state.panel_update_error||(state.updating_panel?(state.panel_action==="rollback"?"Откатываем панель; она будет перезапущена…":"Панель обновляется; ход работы показан ниже…"):"");
     const updateLog=$("#panelUpdateLog");updateLog.textContent=state.panel_update_log||"";updateLog.classList.toggle("hidden",!state.panel_update_log);
@@ -250,6 +252,7 @@ $("#usernameForm").onsubmit=async event=>{event.preventDefault();const username=
 $("#passwordForm").onsubmit=async event=>{event.preventDefault();const password=$("#passwordNew").value;if(password!==$("#passwordConfirm").value){toast("Новые пароли не совпадают",true);return}try{await api(`/api/users/${state.me.id}/password`,{method:"PUT",...json({password,current_password:$("#passwordCurrent").value})});event.target.reset();showLogin();toast("Пароль изменён. Войдите снова.")}catch(e){toast(e.message,true)}};
 $("#autoUpdate").onchange=async event=>{try{await api("/api/settings",{method:"PUT",...json({auto_update:event.target.checked})});toast("Настройка обновления сохранена")}catch(e){event.target.checked=!event.target.checked;toast(e.message,true)}};
 $("#updateBtn").onclick=async()=>{try{await api("/api/update",{method:"POST"});toast("Обновление запущено");await refresh()}catch(e){toast(e.message,true)}};
+$("#migrateCoreBtn").onclick=async()=>{if(!confirm("Перейти на OpenFluxTeam 0.16? Все подключения будут перезапущены. Старое ядро сохранится для отката."))return;try{await api("/api/migrate-core",{method:"POST"});toast("Переход на OpenFluxTeam запущен");await refresh()}catch(e){toast(e.message,true)}};
 $("#updatePanelBtn").onclick=async()=>{try{await api("/api/update-panel",{method:"POST"});toast("Обновление панели запущено. После перезапуска войдите снова.");await refresh()}catch(e){toast(e.message,true)}};
 $("#rollbackServerBtn").onclick=async()=>{if(!confirm("Откатить серверную часть на предыдущую версию? Автообновление будет выключено."))return;try{await api("/api/rollback-server",{method:"POST"});toast("Откат сервера запущен");await refresh()}catch(e){toast(e.message,true)}};
 $("#rollbackPanelBtn").onclick=async()=>{if(!confirm("Откатить панель на предыдущую версию? После перезапуска потребуется повторный вход."))return;try{await api("/api/rollback-panel",{method:"POST"});toast("Откат панели запущен");await refresh()}catch(e){toast(e.message,true)}};

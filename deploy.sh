@@ -3,7 +3,9 @@ set -Eeuo pipefail
 
 REPO="${OPENFLUX_DEPLOY_REPO:-vnenapravo7-source/openflux-deploy}"
 REF="${OPENFLUX_DEPLOY_REF:-main}"
-UPSTREAM_REPO="${OPENFLUX_UPSTREAM_REPO:-https://github.com/p1neappleXpress/OpenFlux.git}"
+CORE_LINE="${OPENFLUX_CORE_LINE:-p1}"
+CORE_EXPLICIT=0
+UPSTREAM_REPO="${OPENFLUX_UPSTREAM_REPO:-}"
 INSTALL_MODE="${OPENFLUX_INSTALL_MODE:-auto}"
 ROLE="${OPENFLUX_ROLE:-controller}"
 PORT="${OPENFLUX_PORT:-8088}"
@@ -39,9 +41,10 @@ OpenFlux Deploy
   --mode systemd|docker   способ установки
   --role controller|node standalone/центральная панель или подключаемая нода
   --port PORT             HTTPS-порт панели (по умолчанию 8088)
+  --core p1|team          ядро p1neappleXpress (по умолчанию) или OpenFluxTeam
 
 Переменные: OPENFLUX_ADMIN_USER, OPENFLUX_ADMIN_PASSWORD, OPENFLUX_NODE_TOKEN,
-OPENFLUX_INSTALL_MODE, OPENFLUX_ROLE, OPENFLUX_PORT.
+OPENFLUX_INSTALL_MODE, OPENFLUX_ROLE, OPENFLUX_PORT, OPENFLUX_CORE_LINE.
 EOF
 }
 
@@ -50,6 +53,7 @@ while [ "$#" -gt 0 ]; do
     --mode) INSTALL_MODE="${2:?}"; shift 2;;
     --role) ROLE="${2:?}"; shift 2;;
     --port) PORT="${2:?}"; PORT_EXPLICIT=1; shift 2;;
+    --core) CORE_LINE="${2:?}"; CORE_EXPLICIT=1; shift 2;;
     -h|--help) usage; exit 0;;
     *) fail "неизвестный аргумент: $1";;
   esac
@@ -57,8 +61,21 @@ done
 
 need_root
 case "$ROLE" in controller|node) ;; *) fail "--role: controller или node";; esac
+case "$CORE_LINE" in p1|team) ;; *) fail "--core: p1 или team";; esac
 case "$PORT" in *[!0-9]*|'') fail "порт должен быть числом";; esac
 [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] || fail "порт вне диапазона"
+
+# A reinstall must keep the selected compatibility line even when the shell
+# itself has no OPENFLUX_CORE_LINE environment variable.
+if [ "$CORE_EXPLICIT" -eq 0 ] && [ -f "$CONFIG_DIR/panel.env" ]; then
+  SAVED_CORE_LINE="$(sed -n 's/^OPENFLUX_CORE_LINE=//p' "$CONFIG_DIR/panel.env" | head -n 1 | tr -d '\"')"
+  case "$SAVED_CORE_LINE" in p1|team) CORE_LINE="$SAVED_CORE_LINE";; esac
+fi
+case "$CORE_LINE" in
+  p1) DEFAULT_UPSTREAM_REPO="https://github.com/p1neappleXpress/OpenFlux.git";;
+  team) DEFAULT_UPSTREAM_REPO="https://github.com/OpenFluxTeam/OpenFlux.git";;
+esac
+UPSTREAM_REPO="${UPSTREAM_REPO:-$DEFAULT_UPSTREAM_REPO}"
 
 if [ "$INSTALL_MODE" = auto ]; then
   if [ -f "$CONFIG_DIR/install-mode" ]; then
@@ -74,6 +91,12 @@ EXISTING_USERS=0
 if [ -f "$CONFIG_DIR/users.json" ]; then
   EXISTING_USERS=1
   [ -f "$CONFIG_DIR/panel.env" ] || fail "users.json существует, но panel.env отсутствует; восстановите конфигурацию перед переустановкой"
+  if [ "$CORE_EXPLICIT" -eq 1 ]; then
+    OLD_CORE_LINE="$(sed -n 's/^OPENFLUX_CORE_LINE=//p' "$CONFIG_DIR/panel.env" | head -n 1 | tr -d '\"')"
+    if [ -n "$OLD_CORE_LINE" ] && [ "$OLD_CORE_LINE" != "$CORE_LINE" ]; then
+      fail "смена ядра с $OLD_CORE_LINE на $CORE_LINE не выполняется поверх существующей установки; используйте отдельный VPS, чтобы не нарушить совместимость подключений"
+    fi
+  fi
   if [ "$PORT_EXPLICIT" -eq 0 ]; then
     OLD_PORT="$(sed -n 's/^OPENFLUX_LISTEN=://p' "$CONFIG_DIR/panel.env" | head -n 1)"
     [ -n "$OLD_PORT" ] && PORT="$OLD_PORT"
@@ -111,6 +134,13 @@ fetch_source(){
   if [ -d "$PREFIX/source" ]; then rm -rf "$PREFIX/source.previous"; mv "$PREFIX/source" "$PREFIX/source.previous"; fi
   mv "$PREFIX/source.new" "$PREFIX/source"
   rm -rf "$tmp"
+}
+
+resolve_upstream_release(){
+  UPSTREAM_TAG="$(git ls-remote --tags --refs "$UPSTREAM_REPO" 'refs/tags/v[0-9]*' | awk '{sub("refs/tags/", "", $2); print $2}' | grep -E '^v[0-9]+(\.[0-9]+)*$' | sort -V | tail -n 1)"
+  [ -n "$UPSTREAM_TAG" ] || fail "не удалось получить стабильный релиз OpenFlux"
+  UPSTREAM_REVISION="$(git ls-remote "$UPSTREAM_REPO" "refs/tags/$UPSTREAM_TAG^{}" "refs/tags/$UPSTREAM_TAG" | awk '/\^\{\}$/ { print $1; found=1; exit } END { if (!found && NR > 0) print $1 }')"
+  [ -n "$UPSTREAM_REVISION" ] || fail "не удалось получить ревизию OpenFlux $UPSTREAM_TAG"
 }
 
 make_config(){
@@ -192,6 +222,8 @@ OPENFLUX_PANEL_REVISION_FILE=$STATE_DIR/panel-revision
 OPENFLUX_ROLLBACK_CAPABLE=1
 OPENFLUX_DEPLOY_REPO=$(escape_env "$REPO")
 OPENFLUX_DEPLOY_REF=$(escape_env "$REF")
+OPENFLUX_CORE_LINE=$(escape_env "$CORE_LINE")
+OPENFLUX_UPSTREAM_REPO=$(escape_env "$UPSTREAM_REPO")
 OPENFLUX_BINARY=$STATE_DIR/bin/openflux
 EOF
 }
@@ -200,7 +232,7 @@ install_systemd(){
   [ -d /run/systemd/system ] || fail "systemd не найден; используйте --mode docker"
   local upstream_tmp upstream_src
   upstream_tmp="$(mktemp -d)"; upstream_src="$upstream_tmp/source"
-  git clone --quiet --depth 1 --single-branch --branch main "$UPSTREAM_REPO" "$upstream_src"
+  git clone --quiet --depth 1 --single-branch --branch "$UPSTREAM_TAG" "$UPSTREAM_REPO" "$upstream_src"
   sh "$PREFIX/source/deploy/patch-upstream.sh" "$upstream_src"
   install_go "$upstream_src"
   say "Собираю OpenFlux и панель"
@@ -216,6 +248,7 @@ install_systemd(){
   mv "$STATE_DIR/bin/openflux-panel.new" "$STATE_DIR/bin/openflux-panel"
   printf '%s\n' "${DEPLOY_REVISION:-bundled}" >"$STATE_DIR/panel-revision"
   git -C "$upstream_src" rev-parse HEAD >"$STATE_DIR/upstream-version"
+  printf '%s · %s\n' "$UPSTREAM_TAG" "$(git -C "$upstream_src" rev-parse --short=8 HEAD)" >"$STATE_DIR/upstream-version-label"
   rm -rf "$upstream_tmp"
   install -m 755 "$PREFIX/source/deploy/update.sh" /usr/local/lib/openflux-deploy/update.sh
   install -m 755 "$PREFIX/source/deploy/patch-upstream.sh" /usr/local/lib/openflux-deploy/patch-upstream.sh
@@ -293,6 +326,7 @@ OPENFLUX_ADMIN_USER=$(escape_env "$ADMIN_USER")
 OPENFLUX_ADMIN_PASSWORD=$(escape_env "$ADMIN_PASSWORD")
 OPENFLUX_NODE_TOKEN=$(escape_env "$NODE_TOKEN")
 OPENFLUX_UPSTREAM_REPO=$(escape_env "$UPSTREAM_REPO")
+OPENFLUX_CORE_LINE=$(escape_env "$CORE_LINE")
 OPENFLUX_DEPLOY_REPO=$(escape_env "$REPO")
 OPENFLUX_DEPLOY_REF=$(escape_env "$REF")
 EOF
@@ -302,9 +336,7 @@ EOF
   fi
   printf 'docker\n' >"$CONFIG_DIR/install-mode"
   export OPENFLUX_DEPLOY_REVISION="${DEPLOY_REVISION:-bundled}"
-  export OPENFLUX_UPSTREAM_REVISION
-  OPENFLUX_UPSTREAM_REVISION="$(git ls-remote "$UPSTREAM_REPO" refs/heads/main | awk '{print $1}')"
-  [ -n "$OPENFLUX_UPSTREAM_REVISION" ] || fail "не удалось получить версию серверного OpenFlux"
+  export OPENFLUX_UPSTREAM_REVISION="$UPSTREAM_REVISION"
   (cd "$PREFIX" && docker compose build)
   touch "$STATE_DIR/panel-seed-next-start"
   touch "$STATE_DIR/server-seed-next-start"
@@ -314,6 +346,7 @@ EOF
 install_packages
 install -d -m 755 "$PREFIX"
 fetch_source
+resolve_upstream_release
 make_config
 write_env
 if [ "$INSTALL_MODE" = systemd ]; then install_systemd; else install_docker; fi

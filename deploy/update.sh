@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-UPSTREAM_REPO="${OPENFLUX_UPSTREAM_REPO:-https://github.com/p1neappleXpress/OpenFlux.git}"
+P1_REPO="https://github.com/p1neappleXpress/OpenFlux.git"
+TEAM_REPO="https://github.com/OpenFluxTeam/OpenFlux.git"
+UPSTREAM_REPO="${OPENFLUX_UPSTREAM_REPO:-$P1_REPO}"
 CONFIG="${OPENFLUX_CONFIG:-/etc/openflux-deploy/config.json}"
 STATE_DIR="${OPENFLUX_STATE_DIR:-/var/lib/openflux-deploy}"
 BINARY="${OPENFLUX_BINARY:-$STATE_DIR/bin/openflux}"
@@ -9,10 +11,22 @@ VERSION_FILE="$STATE_DIR/upstream-version"
 LABEL_FILE="$STATE_DIR/upstream-version-label"
 PATCH_FILE="$STATE_DIR/server-patch-revision"
 PATCH_DIR="${OPENFLUX_PATCH_DIR:-/usr/local/lib/openflux-deploy}"
+CORE_FILE="$STATE_DIR/core-line"
+ENV_FILE="${OPENFLUX_ENV_FILE:-/etc/openflux-deploy/panel.env}"
+DOTENV_FILE="${OPENFLUX_DOTENV_FILE:-/opt/openflux-deploy/.env}"
 FORCE=0
-[ "${1:-}" = "--force" ] && FORCE=1
-
+TARGET_CORE=""
 say(){ printf '[OpenFlux update] %s\n' "$*"; }
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --force) FORCE=1;;
+    --core) TARGET_CORE="${2:?}"; shift;;
+    --rollback) ROLLBACK=1;;
+    *) say "unknown argument: $1"; exit 2;;
+  esac
+  shift
+done
+
 export GOCACHE="${GOCACHE:-$STATE_DIR/go-cache}"
 export GOMODCACHE="${GOMODCACHE:-$STATE_DIR/go-mod}"
 export GOPATH="${GOPATH:-$STATE_DIR/go-path}"
@@ -22,6 +36,32 @@ restart_exit(){
   elif command -v systemctl >/dev/null 2>&1; then
     systemctl kill -s HUP --kill-who=main openflux-panel.service
   fi
+}
+core_for_repo(){
+  case "$1" in *OpenFluxTeam/OpenFlux*) printf '%s\n' team;; *) printf '%s\n' p1;; esac
+}
+repo_for_core(){
+  case "$1" in team) printf '%s\n' "$TEAM_REPO";; p1) printf '%s\n' "$P1_REPO";; *) return 1;; esac
+}
+set_env_value(){
+  local file key value escaped
+  file="$1"; key="$2"; value="$3"
+  [ -f "$file" ] || return 0
+  escaped="${value//\\/\\\\}"; escaped="${escaped//&/\\&}"
+  if grep -q "^${key}=" "$file"; then
+    sed -i "s|^${key}=.*|${key}=${escaped}|" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >>"$file"
+  fi
+}
+persist_core(){
+  local core repo
+  core="$1"; repo="$(repo_for_core "$core")" || { say "invalid core: $core"; return 1; }
+  set_env_value "$ENV_FILE" OPENFLUX_CORE_LINE "$core"
+  set_env_value "$ENV_FILE" OPENFLUX_UPSTREAM_REPO "$repo"
+  set_env_value "$DOTENV_FILE" OPENFLUX_CORE_LINE "$core"
+  set_env_value "$DOTENV_FILE" OPENFLUX_UPSTREAM_REPO "$repo"
+  printf '%s\n' "$core" >"$CORE_FILE.new" && mv "$CORE_FILE.new" "$CORE_FILE"
 }
 check_health(){
   local port scheme state attempt
@@ -37,7 +77,7 @@ check_health(){
   done
   return 1
 }
-if [ "${1:-}" = "--rollback" ]; then
+if [ "${ROLLBACK:-0}" = 1 ]; then
   [ -s "$BINARY.rollback" ] && [ -s "$VERSION_FILE.rollback" ] || { say 'no previous server version to restore'; exit 1; }
   "$BINARY.rollback" --help >/dev/null 2>&1 || { say 'previous server binary failed smoke test'; exit 1; }
   cp -p "$BINARY" "$BINARY.swap"
@@ -50,6 +90,12 @@ if [ "${1:-}" = "--rollback" ]; then
   mv "$BINARY.swap" "$BINARY.rollback"
   mv "$VERSION_FILE.new" "$VERSION_FILE"
   mv "$VERSION_FILE.swap" "$VERSION_FILE.rollback"
+  rollback_failed_core="$(cat "$CORE_FILE" 2>/dev/null || core_for_repo "$UPSTREAM_REPO")"
+  if [ -f "$CORE_FILE.rollback" ]; then
+    rollback_core="$(tr -d '[:space:]' <"$CORE_FILE.rollback")"
+    persist_core "$rollback_core"
+    printf '%s\n' "$rollback_failed_core" >"$CORE_FILE.rollback"
+  fi
   if [ -f "$LABEL_FILE.new" ]; then mv "$LABEL_FILE.new" "$LABEL_FILE"; fi
   if [ -f "$LABEL_FILE.swap" ]; then mv "$LABEL_FILE.swap" "$LABEL_FILE.rollback"; fi
   if [ -f "$PATCH_FILE.rollback" ]; then
@@ -76,12 +122,24 @@ if [ "${1:-}" = "--rollback" ]; then
       mv "$PATCH_FILE.new" "$PATCH_FILE"
       if [ -f "$PATCH_FILE.swap" ]; then mv "$PATCH_FILE.swap" "$PATCH_FILE.rollback"; fi
     fi
+    if [ -f "$CORE_FILE.rollback" ]; then
+      persist_core "$rollback_failed_core"
+      printf '%s\n' "$rollback_core" >"$CORE_FILE.rollback"
+    fi
     restart_exit
     exit 1
   fi
   say 'rollback health check passed'
   exit 0
 fi
+if [ -n "$TARGET_CORE" ]; then
+  case "$TARGET_CORE" in p1|team) ;; *) say 'core must be p1 or team'; exit 2;; esac
+  UPSTREAM_REPO="$(repo_for_core "$TARGET_CORE")"
+fi
+CURRENT_CORE="${OPENFLUX_CORE_LINE:-}"
+[ -n "$CURRENT_CORE" ] || CURRENT_CORE="$(cat "$CORE_FILE" 2>/dev/null || true)"
+[ -n "$CURRENT_CORE" ] || CURRENT_CORE="$(core_for_repo "$UPSTREAM_REPO")"
+[ -n "$TARGET_CORE" ] || UPSTREAM_REPO="$(repo_for_core "$CURRENT_CORE")"
 if [ "$FORCE" -eq 0 ] && [ -f "$CONFIG" ] && grep -Eq '"auto_update"[[:space:]]*:[[:space:]]*false' "$CONFIG"; then
   say "automatic updates disabled"; exit 0
 fi
@@ -115,6 +173,10 @@ sh /usr/local/lib/openflux-deploy/patch-upstream.sh "$TMP/src"
 if [ -f "$BINARY" ]; then cp -p "$BINARY" "$BINARY.rollback"; fi
 if [ -f "$VERSION_FILE" ]; then cp -p "$VERSION_FILE" "$VERSION_FILE.rollback"; fi
 if [ -f "$LABEL_FILE" ]; then cp -p "$LABEL_FILE" "$LABEL_FILE.rollback"; fi
+if [ "$TARGET_CORE" != "" ] && [ "$TARGET_CORE" != "$CURRENT_CORE" ]; then
+  printf '%s\n' "$CURRENT_CORE" >"$CORE_FILE.rollback"
+  persist_core "$TARGET_CORE"
+fi
 printf '%s\n' "${CURRENT_PATCH:-legacy}" >"$PATCH_FILE.rollback"
 install -m 755 "$TMP/openflux" "$BINARY.new"
 mv "$BINARY.new" "$BINARY"
@@ -137,6 +199,7 @@ if ! check_health; then
     printf '%s\n' "$CURRENT" >"$VERSION_FILE.new"
     mv "$VERSION_FILE.new" "$VERSION_FILE"
     if [ -f "$LABEL_FILE.rollback" ]; then cp -p "$LABEL_FILE.rollback" "$LABEL_FILE.new" && mv "$LABEL_FILE.new" "$LABEL_FILE"; fi
+    if [ "$TARGET_CORE" != "" ] && [ "$TARGET_CORE" != "$CURRENT_CORE" ]; then persist_core "$CURRENT_CORE"; fi
     restart_exit
     exit 1
   fi

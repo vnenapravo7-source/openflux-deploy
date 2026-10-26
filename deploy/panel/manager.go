@@ -134,6 +134,7 @@ type Manager struct {
 	panelAction         string
 	checkingVersions    bool
 	latestUpstream      string
+	latestTeam          string
 	latestPanel         string
 	versionCheckError   string
 	lastVersionCheck    time.Time
@@ -1174,6 +1175,16 @@ func (m *Manager) upstreamVersionLabel() string {
 	return label
 }
 
+func (m *Manager) coreLine() string {
+	if saved := revisionFromFile(filepath.Join(filepath.Dir(m.versionPath), "core-line")); saved == "p1" || saved == "team" {
+		return saved
+	}
+	if env("OPENFLUX_CORE_LINE", "") == "team" || strings.Contains(env("OPENFLUX_UPSTREAM_REPO", ""), "OpenFluxTeam/OpenFlux") {
+		return "team"
+	}
+	return "p1"
+}
+
 func shortRevision(revision string) string {
 	if len(revision) > 8 {
 		return revision[:8]
@@ -1197,7 +1208,7 @@ func revisionFromFile(path string) string {
 }
 
 func (m *Manager) state(user User) map[string]any {
-	state := map[string]any{"me": UserView{user.ID, user.Username, user.Role}, "connections": m.connectionViews(user), "upstream_version": m.version(), "upstream_version_label": m.upstreamVersionLabel(), "panel_version": panelVersion, "panel_revision": m.panelRevision(), "direct_ports_ready": dockerDirectReady()}
+	state := map[string]any{"me": UserView{user.ID, user.Username, user.Role}, "connections": m.connectionViews(user), "upstream_version": m.version(), "upstream_version_label": m.upstreamVersionLabel(), "upstream_core": m.coreLine(), "panel_version": panelVersion, "panel_revision": m.panelRevision(), "direct_ports_ready": dockerDirectReady()}
 	if user.Role == "admin" {
 		m.mu.Lock()
 		state["traffic"] = append([]TrafficPoint{}, m.traffic...)
@@ -1213,6 +1224,8 @@ func (m *Manager) state(user User) map[string]any {
 			state["last_version_check"] = m.lastVersionCheck.Format(time.RFC3339)
 		}
 		state["latest_upstream"] = m.latestUpstream
+		state["latest_team"] = m.latestTeam
+		state["core_migration_available"] = m.coreLine() == "p1" && m.latestTeam != ""
 		state["latest_panel"] = m.latestPanel
 		state["version_check_error"] = m.versionCheckError
 		m.mu.Unlock()
@@ -1253,7 +1266,11 @@ func (m *Manager) serverUpdateScriptPath() string {
 	return m.updatePath
 }
 
-func (m *Manager) update() error {
+func (m *Manager) update() error { return m.startUpdate("update", "--force") }
+
+func (m *Manager) migrateToTeam() error { return m.startUpdate("migrate", "--force", "--core", "team") }
+
+func (m *Manager) startUpdate(action string, updateArgs ...string) error {
 	m.mu.Lock()
 	if m.updating || m.updatingPanel {
 		m.mu.Unlock()
@@ -1261,7 +1278,7 @@ func (m *Manager) update() error {
 	}
 	m.updating = true
 	m.updateError = ""
-	m.serverAction = "update"
+	m.serverAction = action
 	m.mu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(m.serverUpdateLogPath), 0700); err != nil {
 		m.mu.Lock()
@@ -1289,7 +1306,7 @@ func (m *Manager) update() error {
 			return
 		}
 		fmt.Fprintln(logFile, "[panel] server update tools refreshed:", scriptPath)
-		cmd := exec.Command(scriptPath, "--force")
+		cmd := exec.Command(scriptPath, updateArgs...)
 		cmd.Env = append(os.Environ(), "OPENFLUX_PATCH_DIR="+filepath.Dir(scriptPath))
 		cmd.Stdout, cmd.Stderr = logFile, logFile
 		err = cmd.Run()

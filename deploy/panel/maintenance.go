@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+const openFluxTeamRepo = "https://github.com/OpenFluxTeam/OpenFlux.git"
+
 func regularFile(path string) bool {
 	if path == "" {
 		return false
@@ -199,27 +201,45 @@ func (m *Manager) checkVersions(force bool) {
 			sha  string
 			err  error
 		}
-		results := make(chan result, 2)
+		core := m.coreLine()
+		upstreamRepo := env("OPENFLUX_UPSTREAM_REPO", "https://github.com/p1neappleXpress/OpenFlux.git")
+		if core == "team" {
+			upstreamRepo = openFluxTeamRepo
+		}
+		resultCount := 2
+		if core == "p1" {
+			resultCount++
+		}
+		results := make(chan result, resultCount)
 		go func() {
-			sha, err := latestReleaseHead(env("OPENFLUX_UPSTREAM_REPO", "https://github.com/p1neappleXpress/OpenFlux.git"))
+			sha, err := latestReleaseHead(upstreamRepo)
 			results <- result{name: "upstream", sha: sha, err: err}
 		}()
 		go func() {
 			sha, err := remoteHead("https://github.com/"+repo+".git", ref)
 			results <- result{name: "panel", sha: sha, err: err}
 		}()
-		first, second := <-results, <-results
-		var upstream, panel string
-		var upstreamErr, panelErr error
-		for _, item := range []result{first, second} {
+		if core == "p1" {
+			go func() {
+				sha, err := latestReleaseHead(openFluxTeamRepo)
+				results <- result{name: "team", sha: sha, err: err}
+			}()
+		}
+		var upstream, panel, team string
+		var upstreamErr, panelErr, teamErr error
+		for i := 0; i < resultCount; i++ {
+			item := <-results
 			if item.name == "upstream" {
 				upstream, upstreamErr = item.sha, item.err
+			} else if item.name == "team" {
+				team, teamErr = item.sha, item.err
 			} else {
 				panel, panelErr = item.sha, item.err
 			}
 		}
 		m.mu.Lock()
 		m.latestUpstream = upstream
+		m.latestTeam = team
 		m.latestPanel = panel
 		var problems []string
 		if upstreamErr != nil {
@@ -227,6 +247,9 @@ func (m *Manager) checkVersions(force bool) {
 		}
 		if panelErr != nil {
 			problems = append(problems, "панель: "+panelErr.Error())
+		}
+		if teamErr != nil {
+			problems = append(problems, "OpenFluxTeam: "+teamErr.Error())
 		}
 		m.versionCheckError = strings.Join(problems, "; ")
 		m.checkingVersions = false
